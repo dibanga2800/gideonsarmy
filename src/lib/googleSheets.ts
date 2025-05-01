@@ -13,31 +13,57 @@ const getAuth = async () => {
     console.log('Sheet ID available:', !!process.env.GOOGLE_SHEET_ID);
     console.log('Client email available:', !!process.env.GOOGLE_CLIENT_EMAIL);
     console.log('Private key available:', !!process.env.GOOGLE_PRIVATE_KEY);
+    
+    // Log the first few characters of each credential (safely)
+    console.log('Sheet ID prefix:', process.env.GOOGLE_SHEET_ID?.substring(0, 5));
+    console.log('Client email prefix:', process.env.GOOGLE_CLIENT_EMAIL?.substring(0, 5));
+    console.log('Private key format check:', {
+      hasHeader: process.env.GOOGLE_PRIVATE_KEY?.includes('BEGIN PRIVATE KEY'),
+      hasFooter: process.env.GOOGLE_PRIVATE_KEY?.includes('END PRIVATE KEY'),
+      containsNewlines: process.env.GOOGLE_PRIVATE_KEY?.includes('\\n'),
+      length: process.env.GOOGLE_PRIVATE_KEY?.length
+    });
 
     if (!process.env.GOOGLE_CLIENT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY || !process.env.GOOGLE_SHEET_ID) {
       throw new Error('Missing required Google Sheets credentials');
     }
 
+    // Clean up private key formatting
+    const privateKey = process.env.GOOGLE_PRIVATE_KEY
+      ?.replace(/\\n/g, '\n')
+      ?.replace(/\n/g, '\n')
+      ?.trim();
+
     const auth = new google.auth.GoogleAuth({
       credentials: {
         client_email: process.env.GOOGLE_CLIENT_EMAIL,
-        private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+        private_key: privateKey,
       },
       scopes: ['https://www.googleapis.com/auth/spreadsheets'],
     });
 
     // Test the auth configuration
+    console.log('Attempting to get client...');
     const client = await auth.getClient();
     console.log('Google Auth client created successfully');
 
     return auth;
   } catch (error) {
-    console.error('Google Sheets Authentication Error:', {
-      message: error instanceof Error ? error.message : 'Unknown error',
+    console.error('Detailed Google Sheets Authentication Error:', {
+      error: error instanceof Error ? {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      } : 'Unknown error type',
       env: process.env.NODE_ENV,
       hasSheetId: !!process.env.GOOGLE_SHEET_ID,
       hasClientEmail: !!process.env.GOOGLE_CLIENT_EMAIL,
       hasPrivateKey: !!process.env.GOOGLE_PRIVATE_KEY,
+      privateKeyCheck: process.env.GOOGLE_PRIVATE_KEY ? {
+        length: process.env.GOOGLE_PRIVATE_KEY.length,
+        startsWithDashes: process.env.GOOGLE_PRIVATE_KEY.startsWith('-----'),
+        hasNewlines: process.env.GOOGLE_PRIVATE_KEY.includes('\\n')
+      } : 'No private key found'
     });
     throw new Error('Failed to initialize Google Sheets client');
   }
@@ -98,18 +124,30 @@ const logError = (message: string, error: unknown) => {
 
 export const getUserByEmail = async (email: string): Promise<UserCredentials | null> => {
   try {
+    console.log('Attempting to get auth for getUserByEmail');
     const auth = await getAuth();
+    console.log('Auth successful, attempting to fetch user data');
+    
     const response = await sheets.spreadsheets.values.get({
       auth,
       spreadsheetId: SPREADSHEET_ID,
       range: USERS_RANGE,
     });
 
+    console.log('Sheets API response received:', {
+      hasValues: !!response.data.values,
+      rowCount: response.data.values?.length || 0
+    });
+
     const rows = response.data.values || [];
     const userRow = rows.find((row) => row[0] === email);
     
-    if (!userRow) return null;
+    if (!userRow) {
+      console.log('No user found with email:', email);
+      return null;
+    }
     
+    console.log('User found, returning credentials');
     return {
       id: userRow[0],         // Email (Column A)
       email: userRow[0],      // Email (Column A)
@@ -118,7 +156,15 @@ export const getUserByEmail = async (email: string): Promise<UserCredentials | n
       name: userRow[3] || ''  // Name (Column D)
     };
   } catch (error) {
-    logError('Failed to fetch user details', error);
+    console.error('Detailed error in getUserByEmail:', {
+      error: error instanceof Error ? {
+        message: error.message,
+        stack: error.stack
+      } : 'Unknown error type',
+      email,
+      spreadsheetId: SPREADSHEET_ID,
+      range: USERS_RANGE
+    });
     throw new Error('Failed to fetch user details');
   }
 };

@@ -17,38 +17,45 @@ export const authOptions: AuthOptions = {
         }
 
         try {
-          console.log('Attempting login for email:', credentials.email);
+          console.log('Starting authentication process for:', credentials.email);
           
           // Get user from Google Sheets
+          console.log('Fetching user details from Google Sheets');
           const user = await getUserByEmail(credentials.email);
           
           if (!user) {
-            console.error('Login failed: User not found:', credentials.email);
+            console.error('Authentication failed: No user found with email:', credentials.email);
             throw new Error("Invalid email or password");
           }
 
+          console.log('User found, verifying password');
           // Verify password
           const isPasswordValid = await verifyPassword(credentials.password, user.password);
           
           if (!isPasswordValid) {
-            console.error('Login failed: Invalid password for user:', credentials.email);
+            console.error('Authentication failed: Invalid password for user:', credentials.email);
             throw new Error("Invalid email or password");
           }
 
-          console.log('Login successful for user:', credentials.email);
+          console.log('Password verified successfully');
+          console.log('Authentication successful for:', credentials.email);
 
           // Return user object without password
           return {
-            id: user.email, // Using email as ID since it's unique
+            id: user.email,
             email: user.email,
             name: user.name,
             isAdmin: user.isAdmin
           };
         } catch (error) {
-          console.error("Authentication error:", {
-            message: error instanceof Error ? error.message : "Unknown error",
+          console.error("Detailed authentication error:", {
+            error: error instanceof Error ? {
+              message: error.message,
+              stack: error.stack
+            } : "Unknown error type",
             email: credentials.email,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            environment: process.env.NODE_ENV
           });
           throw new Error(error instanceof Error ? error.message : "Authentication failed");
         }
