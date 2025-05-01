@@ -12,14 +12,18 @@ export const authOptions: AuthOptions = {
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
+          console.error('Login attempt failed: Missing credentials');
           throw new Error("Please enter both email and password");
         }
 
         try {
+          console.log('Attempting login for email:', credentials.email);
+          
           // Get user from Google Sheets
           const user = await getUserByEmail(credentials.email);
           
           if (!user) {
+            console.error('Login failed: User not found:', credentials.email);
             throw new Error("Invalid email or password");
           }
 
@@ -27,8 +31,11 @@ export const authOptions: AuthOptions = {
           const isPasswordValid = await verifyPassword(credentials.password, user.password);
           
           if (!isPasswordValid) {
+            console.error('Login failed: Invalid password for user:', credentials.email);
             throw new Error("Invalid email or password");
           }
+
+          console.log('Login successful for user:', credentials.email);
 
           // Return user object without password
           return {
@@ -38,7 +45,11 @@ export const authOptions: AuthOptions = {
             isAdmin: user.isAdmin
           };
         } catch (error) {
-          console.error("Authentication error:", error);
+          console.error("Authentication error:", {
+            message: error instanceof Error ? error.message : "Unknown error",
+            email: credentials.email,
+            timestamp: new Date().toISOString()
+          });
           throw new Error(error instanceof Error ? error.message : "Authentication failed");
         }
       }

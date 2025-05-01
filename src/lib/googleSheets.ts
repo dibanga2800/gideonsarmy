@@ -7,15 +7,40 @@ const sheets = google.sheets('v4');
 
 // Create JWT client using service account credentials
 const getAuth = async () => {
-  const auth = new google.auth.GoogleAuth({
-    credentials: {
-      client_email: process.env.GOOGLE_CLIENT_EMAIL,
-      private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    },
-    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-  });
+  try {
+    // Log environment check (safe to log)
+    console.log('Environment:', process.env.NODE_ENV);
+    console.log('Sheet ID available:', !!process.env.GOOGLE_SHEET_ID);
+    console.log('Client email available:', !!process.env.GOOGLE_CLIENT_EMAIL);
+    console.log('Private key available:', !!process.env.GOOGLE_PRIVATE_KEY);
 
-  return auth;
+    if (!process.env.GOOGLE_CLIENT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY || !process.env.GOOGLE_SHEET_ID) {
+      throw new Error('Missing required Google Sheets credentials');
+    }
+
+    const auth = new google.auth.GoogleAuth({
+      credentials: {
+        client_email: process.env.GOOGLE_CLIENT_EMAIL,
+        private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      },
+      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+    });
+
+    // Test the auth configuration
+    const client = await auth.getClient();
+    console.log('Google Auth client created successfully');
+
+    return auth;
+  } catch (error) {
+    console.error('Google Sheets Authentication Error:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      env: process.env.NODE_ENV,
+      hasSheetId: !!process.env.GOOGLE_SHEET_ID,
+      hasClientEmail: !!process.env.GOOGLE_CLIENT_EMAIL,
+      hasPrivateKey: !!process.env.GOOGLE_PRIVATE_KEY,
+    });
+    throw new Error('Failed to initialize Google Sheets client');
+  }
 };
 
 // Spreadsheet IDs and ranges
