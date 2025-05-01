@@ -176,19 +176,29 @@ export async function updateMember(id, memberData) {
     
     // Row index is 0-based for the data, but A2 is the first data row in the sheet
     const sheetRowIndex = rowIndex + 2;
+
+    // Helper function to format date from yyyy-mm-dd to dd/mm/yyyy
+    const formatDateForSheet = (date) => {
+      if (!date) return '';
+      if (date.includes('-')) {
+        const [year, month, day] = date.split('-');
+        return `${day}/${month}/${year}`;
+      }
+      return date;
+    };
     
     const updatedRow = [
       memberData.name || member.name,                      // A: Name
       memberData.email || member.email,                    // B: Email
       memberData.password || member.password,              // C: Password
       member.isAdmin ? 'TRUE' : 'FALSE',                   // D: IsAdmin (preserve existing)
-      memberData.phone || member.phone,                    // E: Phone Number
-      memberData.joinDate || member.joinDate,              // F: Join Date
-      memberData.birthday || member.birthday,              // G: Birthday
-      memberData.anniversary || member.anniversary,        // H: Anniversary
-      memberData.status || member.status,                  // I: Status
-      (memberData.amountPaid?.toString() || member.amountPaid?.toString()),  // J: Dues Amount
-      (memberData.balance?.toString() || member.balance?.toString()),        // K: Outstanding
+      memberData.phoneNumber || member.phone,              // E: Phone Number (handle UI phoneNumber)
+      formatDateForSheet(memberData.joinDate) || member.joinDate,              // F: Join Date
+      formatDateForSheet(memberData.birthday) || member.birthday,              // G: Birthday
+      formatDateForSheet(memberData.anniversary) || member.anniversary,        // H: Anniversary
+      memberData.memberStatus?.toLowerCase() || member.status,                 // I: Status (handle UI memberStatus)
+      (memberData.duesAmountPaid?.toString() || member.amountPaid?.toString() || '0'),  // J: Dues Amount
+      (memberData.outstandingYTD?.toString() || member.balance?.toString() || '0'),     // K: Outstanding
       memberData.year || member.year                       // L: Year
     ];
 
@@ -202,7 +212,15 @@ export async function updateMember(id, memberData) {
       }
     });
 
-    return { ...member, ...memberData };
+    // Return the updated member with consistent field names for the UI
+    return {
+      ...member,
+      ...memberData,
+      phone: updatedRow[4],
+      status: updatedRow[8],
+      amountPaid: parseFloat(updatedRow[9]) || 0,
+      balance: parseFloat(updatedRow[10]) || 0
+    };
   } catch (error) {
     console.error('Error updating member:', error);
     throw new Error('Failed to update member');
@@ -253,16 +271,21 @@ export async function recordPayment(paymentData) {
       throw new Error('Member not found');
     }
 
-    // Calculate new balance
-    const currentBalance = parseFloat(member.balance) || 0;
+    // Calculate new balance and amount paid
+    const currentBalance = parseFloat(member.balance || member.outstandingYTD) || 0;
+    const currentAmountPaid = parseFloat(member.amountPaid || member.duesAmountPaid) || 0;
     const paymentAmount = parseFloat(paymentData.amount) || 0;
-    const newAmountPaid = (parseFloat(member.amountPaid) || 0) + paymentAmount;
+    
+    // Update amounts
+    const newAmountPaid = currentAmountPaid + paymentAmount;
     const newBalance = Math.max(0, currentBalance - paymentAmount);
 
     // Update the member's payment info
     await updateMember(member.id, {
       amountPaid: newAmountPaid.toString(),
-      balance: newBalance.toString()
+      duesAmountPaid: newAmountPaid.toString(),
+      balance: newBalance.toString(),
+      outstandingYTD: newBalance.toString()
     });
 
     // Record this payment in the Payments sheet
@@ -289,7 +312,7 @@ export async function recordPayment(paymentData) {
         paymentData.date || currentDate, // D: Date
         paymentData.method || 'cash',    // E: Method
         month,                           // F: Month
-        year,                            // G: Year
+        year,                           // G: Year
         'completed'                      // H: Status
       ];
       
@@ -371,7 +394,9 @@ export async function recordPayment(paymentData) {
         member: updatedMember || {
           ...member,
           amountPaid: newAmountPaid,
+          duesAmountPaid: newAmountPaid,
           balance: newBalance,
+          outstandingYTD: newBalance,
           payments: [paymentRecord]
         }
       };
@@ -383,7 +408,9 @@ export async function recordPayment(paymentData) {
         member: {
           ...member,
           amountPaid: newAmountPaid,
-          balance: newBalance
+          duesAmountPaid: newAmountPaid,
+          balance: newBalance,
+          outstandingYTD: newBalance
         },
         warning: 'Member updated but payment history not recorded'
       };

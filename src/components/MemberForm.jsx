@@ -26,32 +26,38 @@ export default function MemberForm({
   const [formData, setFormData] = useState(defaultValues);
   const [loading, setLoading] = useState(false);
 
+  // Convert date from dd/mm/yyyy to yyyy-mm-dd
+  const convertDateToInputFormat = (dateStr) => {
+    if (!dateStr) return '';
+    
+    // If already in yyyy-mm-dd format
+    if (dateStr.includes('-')) {
+      return dateStr;
+    }
+    
+    // Convert from dd/mm/yyyy to yyyy-mm-dd
+    const [day, month, year] = dateStr.split('/');
+    if (day && month && year) {
+      return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    }
+    
+    return '';
+  };
+
   useEffect(() => {
     if (initialData) {
-      // Format dates for date input field if they exist
-      const formattedData = { ...initialData };
-      
-      // Convert dates from dd/mm/yyyy to yyyy-mm-dd for the date input
-      if (formattedData.joinDate) {
-        const [day, month, year] = formattedData.joinDate.split('/');
-        if (day && month && year) {
-          formattedData.joinDate = `${year}-${month}-${day}`;
-        }
-      }
-      
-      if (formattedData.birthday) {
-        const [day, month, year] = formattedData.birthday.split('/');
-        if (day && month && year) {
-          formattedData.birthday = `${year}-${month}-${day}`;
-        }
-      }
-      
-      if (formattedData.anniversary) {
-        const [day, month, year] = formattedData.anniversary.split('/');
-        if (day && month && year) {
-          formattedData.anniversary = `${year}-${month}-${day}`;
-        }
-      }
+      // Format all date fields for the form inputs
+      const formattedData = {
+        ...initialData,
+        joinDate: convertDateToInputFormat(initialData.joinDate),
+        birthday: convertDateToInputFormat(initialData.birthday),
+        anniversary: convertDateToInputFormat(initialData.anniversary),
+        // Handle field name mappings
+        phoneNumber: initialData.phoneNumber || initialData.phone || '',
+        memberStatus: initialData.memberStatus || initialData.status || 'active',
+        duesAmountPaid: initialData.duesAmountPaid || initialData.amountPaid || 0,
+        outstandingYTD: initialData.outstandingYTD || initialData.balance || 0
+      };
       
       setFormData(formattedData);
     } else {
@@ -96,28 +102,17 @@ export default function MemberForm({
       setLoading(true);
       
       // Convert dates from yyyy-mm-dd to dd/mm/yyyy for storage
-      const processedData = { ...formData };
-      
-      if (processedData.joinDate) {
-        const [year, month, day] = processedData.joinDate.split('-');
-        if (year && month && day) {
-          processedData.joinDate = `${day}/${month}/${year}`;
-        }
-      }
-      
-      if (processedData.birthday) {
-        const [year, month, day] = processedData.birthday.split('-');
-        if (year && month && day) {
-          processedData.birthday = `${day}/${month}/${year}`;
-        }
-      }
-      
-      if (processedData.anniversary) {
-        const [year, month, day] = processedData.anniversary.split('-');
-        if (year && month && day) {
-          processedData.anniversary = `${day}/${month}/${year}`;
-        }
-      }
+      const processedData = {
+        ...formData,
+        joinDate: formData.joinDate ? formData.joinDate.split('-').reverse().join('/') : '',
+        birthday: formData.birthday ? formData.birthday.split('-').reverse().join('/') : '',
+        anniversary: formData.anniversary ? formData.anniversary.split('-').reverse().join('/') : '',
+        // Ensure consistent field names for API
+        phone: formData.phoneNumber,
+        status: formData.memberStatus,
+        amountPaid: formData.duesAmountPaid,
+        balance: formData.outstandingYTD
+      };
       
       await onSubmit(processedData);
       onClose();
@@ -181,25 +176,8 @@ export default function MemberForm({
                       name="password"
                       value={formData.password}
                       onChange={handleInputChange}
-                      required
+                      required={!isEditMode}
                     />
-                  </div>
-                  
-                  <div className="col-md-6">
-                    <label htmlFor="isAdmin" className="form-label d-block">Admin Status</label>
-                    <div className="form-check">
-                      <input 
-                        type="checkbox"
-                        className="form-check-input" 
-                        id="isAdmin"
-                        name="isAdmin"
-                        checked={formData.isAdmin}
-                        onChange={handleInputChange}
-                      />
-                      <label className="form-check-label" htmlFor="isAdmin">
-                        Is Admin User
-                      </label>
-                    </div>
                   </div>
                 </div>
               )}
@@ -234,7 +212,7 @@ export default function MemberForm({
               </div>
               
               <div className="row mb-3">
-                <div className="col-md-4">
+                <div className="col-md-6">
                   <label htmlFor="joinDate" className="form-label">Join Date</label>
                   <input 
                     type="date"
@@ -246,7 +224,7 @@ export default function MemberForm({
                   />
                 </div>
                 
-                <div className="col-md-4">
+                <div className="col-md-6">
                   <label htmlFor="birthday" className="form-label">Birthday</label>
                   <input 
                     type="date"
@@ -257,9 +235,11 @@ export default function MemberForm({
                     onChange={handleInputChange}
                   />
                 </div>
-                
-                <div className="col-md-4">
-                  <label htmlFor="anniversary" className="form-label">Anniversary</label>
+              </div>
+              
+              <div className="row mb-3">
+                <div className="col-md-6">
+                  <label htmlFor="anniversary" className="form-label">Wedding Anniversary</label>
                   <input 
                     type="date"
                     className="form-control" 
@@ -269,63 +249,49 @@ export default function MemberForm({
                     onChange={handleInputChange}
                   />
                 </div>
+                
+                <div className="col-md-6">
+                  <label htmlFor="year" className="form-label">Year</label>
+                  <input 
+                    type="text"
+                    className="form-control" 
+                    id="year"
+                    name="year"
+                    value={formData.year}
+                    onChange={handleInputChange}
+                  />
+                </div>
               </div>
               
-              {isEditMode && (
-                <div className="row mb-3">
-                  <div className="col-md-4">
-                    <label htmlFor="duesAmountPaid" className="form-label">Dues Amount Paid</label>
-                    <input 
-                      type="number"
-                      className="form-control" 
-                      id="duesAmountPaid"
-                      name="duesAmountPaid"
-                      value={formData.duesAmountPaid}
-                      onChange={handleInputChange}
-                      min="0"
-                      step="0.01"
-                    />
-                  </div>
-                  
-                  <div className="col-md-4">
-                    <label htmlFor="outstandingYTD" className="form-label">Outstanding YTD</label>
-                    <input 
-                      type="number"
-                      className="form-control" 
-                      id="outstandingYTD"
-                      name="outstandingYTD"
-                      value={formData.outstandingYTD}
-                      onChange={handleInputChange}
-                      min="0"
-                      step="0.01"
-                    />
-                  </div>
-                  
-                  <div className="col-md-4">
-                    <label htmlFor="year" className="form-label">Year</label>
-                    <input 
-                      type="text"
-                      className="form-control" 
-                      id="year"
-                      name="year"
-                      value={formData.year}
-                      onChange={handleInputChange}
-                      pattern="\d{4}"
-                      maxLength="4"
-                    />
-                  </div>
+              <div className="row mb-3">
+                <div className="col-md-6">
+                  <label htmlFor="duesAmountPaid" className="form-label">Dues Amount Paid</label>
+                  <input 
+                    type="number"
+                    className="form-control" 
+                    id="duesAmountPaid"
+                    name="duesAmountPaid"
+                    value={formData.duesAmountPaid}
+                    onChange={handleInputChange}
+                  />
                 </div>
-              )}
+                
+                <div className="col-md-6">
+                  <label htmlFor="outstandingYTD" className="form-label">Outstanding Amount</label>
+                  <input 
+                    type="number"
+                    className="form-control" 
+                    id="outstandingYTD"
+                    name="outstandingYTD"
+                    value={formData.outstandingYTD}
+                    onChange={handleInputChange}
+                  />
+                </div>
+              </div>
               
               <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={onClose}>
-                  Cancel
-                </button>
-                <button 
-                  type="submit" 
-                  className="btn btn-primary"
-                  disabled={loading}
-                >
+                <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={loading}>
                   {loading ? (
                     <>
                       <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>

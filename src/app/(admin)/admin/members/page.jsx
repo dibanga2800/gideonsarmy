@@ -18,10 +18,14 @@ export default function MembersPage() {
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [selectedMember, setSelectedMember] = useState(null);
 
-  // Calculate stats
-  const totalMembers = members.length;
-  const totalDuesPaid = members.reduce((sum, member) => sum + (member.duesAmountPaid || 0), 0);
-  const totalOutstanding = members.reduce((sum, member) => sum + (member.outstandingYTD || 0), 0);
+  // Calculate stats - handle both field name variations and ensure members is defined
+  const totalMembers = members?.length || 0;
+  const totalDuesPaid = (members || []).reduce((sum, member) => 
+    sum + (member?.duesAmountPaid || member?.amountPaid || 0), 0
+  );
+  const totalOutstanding = (members || []).reduce((sum, member) => 
+    sum + (member?.outstandingYTD || member?.balance || 0), 0
+  );
 
   // Fetch all members on page load
   useEffect(() => {
@@ -40,7 +44,7 @@ export default function MembersPage() {
       member => 
         member.name?.toLowerCase().includes(query) ||
         member.email?.toLowerCase().includes(query) ||
-        member.phoneNumber?.toLowerCase().includes(query)
+        (member.phoneNumber || member.phone || '')?.toLowerCase().includes(query)
     );
     
     setFilteredMembers(filtered);
@@ -52,7 +56,13 @@ export default function MembersPage() {
       const response = await fetch('/api/admin/members');
       
       if (!response.ok) {
-        throw new Error('Failed to fetch members');
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const error = await response.json();
+          throw new Error(error.message || 'Failed to fetch members');
+        } else {
+          throw new Error('Failed to fetch members');
+        }
       }
       
       const data = await response.json();
@@ -62,10 +72,10 @@ export default function MembersPage() {
         id: member.id || '',
         name: member.name?.trim() || '',
         email: member.email?.trim() || '',
-        phoneNumber: member.phoneNumber?.trim() || '',
-        memberStatus: member.memberStatus?.toLowerCase() || 'inactive',
-        duesAmountPaid: typeof member.duesAmountPaid === 'number' ? member.duesAmountPaid : 0,
-        outstandingYTD: typeof member.outstandingYTD === 'number' ? member.outstandingYTD : 0,
+        phoneNumber: member.phoneNumber || member.phone || '',
+        memberStatus: (member.memberStatus || member.status || 'inactive').toLowerCase(),
+        duesAmountPaid: member.duesAmountPaid || member.amountPaid || 0,
+        outstandingYTD: member.outstandingYTD || member.balance || 0,
         joinDate: member.joinDate?.trim() || '',
         birthday: member.birthday?.trim() || '',
         anniversary: member.anniversary?.trim() || '',
@@ -76,7 +86,7 @@ export default function MembersPage() {
       setFilteredMembers(processedMembers);
     } catch (error) {
       console.error('Error fetching members:', error);
-      toast.error('Failed to load members');
+      toast.error(error.message || 'Failed to load members');
     } finally {
       setLoading(false);
     }
@@ -93,8 +103,13 @@ export default function MembersPage() {
       });
       
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to add member');
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const error = await response.json();
+          throw new Error(error.message || 'Failed to add member');
+        } else {
+          throw new Error('Failed to add member');
+        }
       }
       
       const newMember = await response.json();
@@ -103,25 +118,40 @@ export default function MembersPage() {
       setAddDialogOpen(false);
     } catch (error) {
       console.error('Error adding member:', error);
-      toast.error(error.message);
+      toast.error(error.message || 'Failed to add member');
     }
   };
 
   const handleEditMember = async (formData) => {
     try {
-      if (!selectedMember) return;
+      if (!selectedMember) {
+        toast.error('No member selected for editing');
+        return;
+      }
+      
+      // Ensure numeric fields are properly formatted
+      const processedData = {
+        ...formData,
+        duesAmountPaid: parseFloat(formData.duesAmountPaid) || 0,
+        outstandingYTD: parseFloat(formData.outstandingYTD) || 0
+      };
       
       const response = await fetch(`/api/admin/members/${selectedMember.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(processedData),
       });
       
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to update member');
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const error = await response.json();
+          throw new Error(error.message || error.error || 'Failed to update member');
+        } else {
+          throw new Error('Failed to update member');
+        }
       }
       
       const updatedMember = await response.json();
@@ -132,12 +162,13 @@ export default function MembersPage() {
           member.id === selectedMember.id ? {
             ...member,
             ...updatedMember,
+            // Ensure we have all required fields with proper names
             name: updatedMember.name || member.name,
             email: updatedMember.email || member.email,
-            phoneNumber: updatedMember.phoneNumber || member.phoneNumber,
-            memberStatus: updatedMember.memberStatus || member.memberStatus,
-            duesAmountPaid: updatedMember.duesAmountPaid || member.duesAmountPaid,
-            outstandingYTD: updatedMember.outstandingYTD || member.outstandingYTD,
+            phoneNumber: updatedMember.phoneNumber || updatedMember.phone || member.phoneNumber,
+            memberStatus: updatedMember.memberStatus || updatedMember.status || member.memberStatus,
+            duesAmountPaid: updatedMember.duesAmountPaid || updatedMember.amountPaid || member.duesAmountPaid || 0,
+            outstandingYTD: updatedMember.outstandingYTD || updatedMember.balance || member.outstandingYTD || 0,
             joinDate: updatedMember.joinDate || member.joinDate,
             birthday: updatedMember.birthday || member.birthday,
             anniversary: updatedMember.anniversary || member.anniversary,
@@ -150,7 +181,7 @@ export default function MembersPage() {
       setEditDialogOpen(false);
     } catch (error) {
       console.error('Error updating member:', error);
-      toast.error(error.message);
+      toast.error(error.message || 'Failed to update member');
     }
   };
 
@@ -164,15 +195,20 @@ export default function MembersPage() {
       });
       
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to delete member');
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const error = await response.json();
+          throw new Error(error.message || 'Failed to delete member');
+        } else {
+          throw new Error('Failed to delete member');
+        }
       }
       
       setMembers(prev => prev.filter(member => member.id !== memberId));
       toast.success('Member deleted successfully');
     } catch (error) {
       console.error('Error deleting member:', error);
-      toast.error(error.message);
+      toast.error(error.message || 'Failed to delete member');
     }
   };
 
@@ -187,16 +223,39 @@ export default function MembersPage() {
       });
       
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to record payment');
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const error = await response.json();
+          throw new Error(error.message || error.error || 'Failed to record payment');
+        } else {
+          throw new Error('Failed to record payment');
+        }
       }
       
       const result = await response.json();
       
-      // Update the member in the local state
+      if (!result.success || !result.member) {
+        throw new Error('Invalid response from server');
+      }
+      
+      // Update the member in the local state with proper field mapping
       setMembers(prev => 
         prev.map(member => 
-          member.id === paymentData.memberId ? result.member : member
+          member.id === paymentData.memberId ? {
+            ...member,
+            ...result.member,
+            // Ensure we have all required fields with proper names
+            name: result.member.name || member.name,
+            email: result.member.email || member.email,
+            phoneNumber: result.member.phoneNumber || result.member.phone || member.phoneNumber,
+            memberStatus: result.member.memberStatus || result.member.status || member.memberStatus,
+            duesAmountPaid: result.member.duesAmountPaid || result.member.amountPaid || member.duesAmountPaid || 0,
+            outstandingYTD: result.member.outstandingYTD || result.member.balance || member.outstandingYTD || 0,
+            joinDate: result.member.joinDate || member.joinDate,
+            birthday: result.member.birthday || member.birthday,
+            anniversary: result.member.anniversary || member.anniversary,
+            year: result.member.year || member.year
+          } : member
         )
       );
       
@@ -204,7 +263,7 @@ export default function MembersPage() {
       setPaymentDialogOpen(false);
     } catch (error) {
       console.error('Error recording payment:', error);
-      toast.error(error.message);
+      toast.error(error.message || 'Failed to record payment');
     }
   };
 

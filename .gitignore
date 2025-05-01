@@ -12,6 +12,7 @@
 
 # production
 /build
+/dist
 
 # misc
 .DS_Store
@@ -25,10 +26,28 @@ yarn-error.log*
 # local env files
 .env*.local
 .env
+.env.development
+.env.production
 
 # vercel
 .vercel
 
 # typescript
 *.tsbuildinfo
-next-env.d.ts 
+next-env.d.ts
+
+# email configuration and test files
+/scripts/email-test.js
+/scripts/test-email.js
+/scripts/build-email.js
+/scripts/test-email-api.js
+/src/lib/emailTemplates.ts
+/src/app/api/test-email/
+/public/email-test.html
+GMAIL_SETUP_INSTRUCTIONS.md
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo 

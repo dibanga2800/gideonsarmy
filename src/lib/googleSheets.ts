@@ -88,7 +88,7 @@ const USERS_RANGE = 'Users!A2:D';
 const MEMBER_COLUMNS = {
   NAME: 0,           // Column A
   EMAIL: 1,          // Column B
-  PASSWORD: 2,       // Column C
+  PASSWORD: 2,       // Column C (not used in Members sheet)
   IS_ADMIN: 3,       // Column D
   PHONE: 4,          // Column E
   JOIN_DATE: 5,      // Column F
@@ -112,6 +112,24 @@ const normalizeBoolean = (value: any): boolean => {
 // Helper function to format boolean values for Google Sheets
 const formatBoolean = (value: boolean): string => {
   return value ? 'true' : 'false';
+};
+
+// Helper function to format date for Google Sheets
+const formatDate = (date: string | null | undefined): string => {
+  if (!date) return '';
+  
+  // If already in dd/mm/yyyy format, return as is
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(date)) return date;
+  
+  // If in ISO format, convert to dd/mm/yyyy
+  try {
+    const d = new Date(date);
+    if (!isNaN(d.getTime())) {
+      return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
+    }
+  } catch (e) {}
+  
+  return date;
 };
 
 export const hashPassword = async (password: string): Promise<string> => {
@@ -193,38 +211,16 @@ export const getMembers = async (requestingUserEmail?: string, isAdmin = false):
       name: row[MEMBER_COLUMNS.NAME]?.trim() || '',
       email: row[MEMBER_COLUMNS.EMAIL]?.trim() || '',
       phoneNumber: row[MEMBER_COLUMNS.PHONE]?.trim() || '',
-      joinDate: row[MEMBER_COLUMNS.JOIN_DATE] || '',
-      memberStatus: (row[MEMBER_COLUMNS.STATUS] || 'inactive').toLowerCase() as MemberStatus,
-      birthday: row[MEMBER_COLUMNS.BIRTHDAY] || '',
-      anniversary: row[MEMBER_COLUMNS.ANNIVERSARY] || '',
+      joinDate: formatDate(row[MEMBER_COLUMNS.JOIN_DATE]) || '',
+      memberStatus: (row[MEMBER_COLUMNS.STATUS]?.toLowerCase() || 'inactive') as MemberStatus,
+      birthday: formatDate(row[MEMBER_COLUMNS.BIRTHDAY]) || '',
+      anniversary: formatDate(row[MEMBER_COLUMNS.ANNIVERSARY]) || '',
       duesAmountPaid: parseFloat(row[MEMBER_COLUMNS.DUES_PAID]) || 0,
       outstandingYTD: parseFloat(row[MEMBER_COLUMNS.OUTSTANDING]) || 0,
       year: row[MEMBER_COLUMNS.YEAR] || new Date().getFullYear().toString(),
-      isAdmin: row[MEMBER_COLUMNS.IS_ADMIN] === 'true',
+      isAdmin: normalizeBoolean(row[MEMBER_COLUMNS.IS_ADMIN]),
       totalDuesOwed: parseFloat(row[MEMBER_COLUMNS.OUTSTANDING]) || 0
     }));
-
-    // Clean up the data
-    members.forEach(member => {
-      // Ensure dates are in the correct format (dd/mm/yyyy)
-      const formatDate = (date: string) => {
-        if (!date) return '';
-        // If already in correct format, return as is
-        if (/^\d{2}\/\d{2}\/\d{4}$/.test(date)) return date;
-        // If in ISO format, convert to dd/mm/yyyy
-        try {
-          const d = new Date(date);
-          if (!isNaN(d.getTime())) {
-            return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
-          }
-        } catch (e) {}
-        return date;
-      };
-
-      member.joinDate = formatDate(member.joinDate);
-      member.birthday = formatDate(member.birthday);
-      member.anniversary = formatDate(member.anniversary);
-    });
 
     // If user is not admin, only return their own record
     if (!isAdmin && requestingUserEmail) {
@@ -1041,11 +1037,16 @@ export const updateMember = async (id: string, updates: Partial<Member>): Promis
     const updatedMember = {
       ...currentMember,
       ...updates,
+      // Format dates
+      joinDate: formatDate(updates.joinDate || currentMember.joinDate),
+      birthday: formatDate(updates.birthday || currentMember.birthday),
+      anniversary: formatDate(updates.anniversary || currentMember.anniversary),
       // Ensure required fields
-      memberStatus: (updates.memberStatus || currentMember.memberStatus || 'inactive').toLowerCase(),
+      memberStatus: (updates.memberStatus || currentMember.memberStatus || 'inactive').toLowerCase() as MemberStatus,
       duesAmountPaid: updates.duesAmountPaid ?? currentMember.duesAmountPaid ?? 0,
       outstandingYTD: updates.outstandingYTD ?? currentMember.outstandingYTD ?? 0,
-      totalDuesOwed: updates.outstandingYTD ?? currentMember.outstandingYTD ?? 0
+      totalDuesOwed: updates.outstandingYTD ?? currentMember.outstandingYTD ?? 0,
+      year: updates.year || currentMember.year || new Date().getFullYear().toString()
     };
 
     // Update the row in the sheet
@@ -1065,8 +1066,8 @@ export const updateMember = async (id: string, updates: Partial<Member>): Promis
           updatedMember.birthday,        // G: Birthday
           updatedMember.anniversary,     // H: Anniversary
           updatedMember.memberStatus,    // I: Status
-          updatedMember.duesAmountPaid,  // J: Dues Amount
-          updatedMember.outstandingYTD,  // K: Outstanding
+          updatedMember.duesAmountPaid.toString(),  // J: Dues Amount
+          updatedMember.outstandingYTD.toString(),  // K: Outstanding
           updatedMember.year             // L: Year
         ]]
       }
