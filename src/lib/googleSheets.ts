@@ -20,7 +20,7 @@ const getAuth = async () => {
     console.log('Private key format check:', {
       hasHeader: process.env.GOOGLE_PRIVATE_KEY?.includes('BEGIN PRIVATE KEY'),
       hasFooter: process.env.GOOGLE_PRIVATE_KEY?.includes('END PRIVATE KEY'),
-      containsNewlines: process.env.GOOGLE_PRIVATE_KEY?.includes('\\n'),
+      containsNewlines: process.env.GOOGLE_PRIVATE_KEY?.includes('\n'),
       length: process.env.GOOGLE_PRIVATE_KEY?.length
     });
 
@@ -28,11 +28,20 @@ const getAuth = async () => {
       throw new Error('Missing required Google Sheets credentials');
     }
 
-    // Clean up private key formatting
-    const privateKey = process.env.GOOGLE_PRIVATE_KEY
-      ?.replace(/\\n/g, '\n')
-      ?.replace(/\n/g, '\n')
-      ?.trim();
+    // Format private key by adding proper line breaks
+    let privateKey = process.env.GOOGLE_PRIVATE_KEY;
+    
+    // Check if the key needs to be formatted
+    if (!privateKey.includes('\n')) {
+      // Add line break after header
+      privateKey = privateKey.replace('-----BEGIN PRIVATE KEY-----', '-----BEGIN PRIVATE KEY-----\n');
+      // Add line break before footer
+      privateKey = privateKey.replace('-----END PRIVATE KEY-----', '\n-----END PRIVATE KEY-----');
+      // Add line breaks every 64 characters between header and footer
+      const keyBody = privateKey.replace('-----BEGIN PRIVATE KEY-----\n', '').replace('\n-----END PRIVATE KEY-----', '');
+      const formattedBody = keyBody.match(/.{1,64}/g)?.join('\n');
+      privateKey = `-----BEGIN PRIVATE KEY-----\n${formattedBody}\n-----END PRIVATE KEY-----`;
+    }
 
     const auth = new google.auth.GoogleAuth({
       credentials: {
@@ -62,7 +71,7 @@ const getAuth = async () => {
       privateKeyCheck: process.env.GOOGLE_PRIVATE_KEY ? {
         length: process.env.GOOGLE_PRIVATE_KEY.length,
         startsWithDashes: process.env.GOOGLE_PRIVATE_KEY.startsWith('-----'),
-        hasNewlines: process.env.GOOGLE_PRIVATE_KEY.includes('\\n')
+        hasNewlines: process.env.GOOGLE_PRIVATE_KEY.includes('\n')
       } : 'No private key found'
     });
     throw new Error('Failed to initialize Google Sheets client');
