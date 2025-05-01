@@ -1,0 +1,41 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Cursor Rules for Gideon's Army Dues Management App
+
+## Project Structure
+- API routes should be organized under `/pages/api/`.
+- Server-side logic must be in `/lib/`.
+- Reusable React components go under `/components/`.
+- Utility/helper functions must be placed in `/utils/`.
+- Pages should remain minimal, focusing on data-fetching and displaying content.
+
+## Authentication
+- Use **NextAuth.js** with the **Credentials Provider**.
+- Passwords must be securely hashed with **bcrypt** before saving.
+- Never expose password hashes to the frontend.
+
+## Authorization
+- Implement roles: "member" and "admin".
+- Protect admin-only routes by checking the user's session and role.
+- Always fetch sessions server-side using `getServerSession()`.
+
+## Google Sheets API
+- Only access Google Sheets from server-side API routes or `/lib/` functions.
+- Helper functions for interacting with Google Sheets must be inside `/lib/googleSheets.ts`.
+- Use batch reads/writes where possible to optimize performance.
+- Never expose Google credentials to the frontend.
+
+## API Routes
+- API routes that modify data must only accept **POST** or **PATCH** requests.
+- Validate and sanitize all incoming request data.
+- Return consistent JSON responses structured as:
+  ```json
+  {
+    "success": true,
+    "message": "Your message here",
+    "data": {...}
+  }
+

@@ -1,0 +1,43 @@
+{
+  "name": "mens-fellowship-app",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "dev:3003": "next dev -p 3003",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "add-admin": "node scripts/add-admin.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "bootstrap": "^5.3.5",
+    "bootstrap-icons": "^1.11.3",
+    "clsx": "^2.1.1",
+    "dotenv": "^16.5.0",
+    "googleapis": "^148.0.0",
+    "lucide-react": "^0.503.0",
+    "next": "^14.2.8",
+    "next-auth": "^4.24.11",
+    "nodemailer": "^6.10.1",
+    "react": "^18.2.0",
+    "react-bootstrap": "^2.10.9",
+    "react-dom": "^18.2.0",
+    "react-toastify": "^11.0.5",
+    "resend": "^4.4.1",
+    "sonner": "^2.0.3"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/next": "^9.0.0",
+    "@types/node": "^22.15.2",
+    "@types/nodemailer": "^6.4.17",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "cross-env": "^7.0.3",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.2"
+  },
+  "type": "module"
+}

@@ -1,0 +1,10 @@
+[
+  {
+    "id": "admin-1745682382759",
+    "email": "dibanga2800@gmail.com",
+    "password": "$2b$10$xuRe.MQDzpwfmIm3mwUSJ.1MrV6lqgntQlFFwN1RAiont3qSNZ.WG",
+    "name": "Admin User",
+    "isAdmin": true,
+    "createdAt": "2025-04-26T15:46:22.759Z"
+  }
+]

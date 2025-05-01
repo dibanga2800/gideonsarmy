@@ -1,0 +1,52 @@
+/* Global CSS */
+:root {
+  --foreground-rgb: 0, 0, 0;
+  --background-rgb: 255, 255, 255;
+  --bs-blue: #0d6efd;
+  --bs-blue-dark: #0a58ca;
+  --bs-green: #198754;
+  --bs-red: #dc3545;
+  --bs-white: #ffffff;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: rgb(var(--background-rgb));
+}
+
+/* Custom utility classes using Bootstrap colors */
+.custom-blue {
+  color: var(--bs-blue);
+  font-weight: bold;
+}
+
+.custom-green {
+  color: var(--bs-green);
+  font-weight: bold;
+}
+
+/* Bootstrap-based utility classes */
+.bg-blue {
+  background-color: var(--bs-blue);
+  color: var(--bs-white);
+}
+
+.bg-red {
+  background-color: var(--bs-red);
+  color: var(--bs-white);
+}
+
+.bg-green {
+  background-color: var(--bs-green);
+  color: var(--bs-white);
+}
+
+/* Custom Classes */
+.test-bg {
+  background-color: var(--bs-blue) !important;
+}
+
+.test-text {
+  color: var(--bs-blue-dark) !important;
+  font-weight: bold !important;
+}

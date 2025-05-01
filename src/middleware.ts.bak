@@ -1,0 +1,46 @@
+import { NextResponse } from 'next/server';
+import { getToken } from 'next-auth/jwt';
+import type { NextRequest } from 'next/server';
+
+// Protect routes that require authentication and/or admin access
+export async function middleware(request: NextRequest) {
+  const path = request.nextUrl.pathname;
+  
+  // Define public paths that don't require authentication
+  const publicPaths = ['/', '/login'];
+  // Define paths that require authentication
+  const authPaths = ['/dashboard'];
+  // Define paths that require admin role
+  const adminPaths = ['/admin', '/admin/members', '/admin/payments'];
+  
+  // Check if the path is a public path
+  const isPublicPath = publicPaths.some(
+    (publicPath) => path === publicPath || path === `${publicPath}/`
+  );
+  
+  // Skip middleware for public paths and API routes
+  if (isPublicPath || path.startsWith('/api/')) {
+    return NextResponse.next();
+  }
+  
+  // Get token from session
+  const token = await getToken({ req: request });
+  
+  // If no token, redirect to login
+  if (!token) {
+    return NextResponse.redirect(new URL('/login', request.url));
+  }
+  
+  // Check if the path requires admin role
+  const isAdminPath = adminPaths.some(
+    (adminPath) => path.startsWith(adminPath)
+  );
+  
+  // If path requires admin and user is not admin, redirect to dashboard
+  if (isAdminPath && !token.isAdmin) {
+    return NextResponse.redirect(new URL('/dashboard', request.url));
+  }
+  
+  // Allow access if all checks pass
+  return NextResponse.next();
+} 
