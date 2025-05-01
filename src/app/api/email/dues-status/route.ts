@@ -4,6 +4,14 @@ import { getMemberById } from "@/lib/sheets";
 import { sendDuesStatusEmail } from "@/lib/email";
 import { authOptions } from "@/lib/auth";
 
+const logError = (message: string, error: unknown) => {
+  if (process.env.NODE_ENV === 'development') {
+    console.error(message, error);
+  } else {
+    console.error(message);
+  }
+};
+
 export async function POST(request: NextRequest) {
   try {
     // Verify the user is authenticated and is an admin
@@ -84,7 +92,7 @@ export async function POST(request: NextRequest) {
     });
     
   } catch (error) {
-    console.error('Error sending dues status email:', error);
+    logError('Failed to send dues status email', error);
     let errorMessage = "Failed to send dues status email";
     
     if (error instanceof Error) {

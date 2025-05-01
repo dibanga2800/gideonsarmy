@@ -1,113 +1,124 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import Image from 'next/image';
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
-import { User } from '@/types';
+import { Member } from '@/types';
 
 export default function ProfilePage() {
-  const { data: session, status } = useSession();
-  const router = useRouter();
-  const user = session?.user as User | undefined;
+  const { data: session } = useSession();
+  const [user, setUser] = useState<Member | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    if (status === 'unauthenticated') {
-      router.push('/auth/signin');
-    }
-  }, [status, router]);
+    const fetchUserProfile = async () => {
+      if (!session?.user?.email) return;
 
-  if (status === 'loading') {
+      try {
+        const response = await fetch(`/api/members/${session.user.email}`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch profile');
+        }
+        const data = await response.json();
+        setUser(data);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load profile');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchUserProfile();
+  }, [session]);
+
+  if (isLoading) {
     return (
-      <div className="d-flex min-vh-100 align-items-center justify-content-center">
+      <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">
-          <div className="spinner-border text-primary" role="status">
-            <span className="visually-hidden">Loading...</span>
-          </div>
-          <p className="mt-3 text-secondary">Loading your profile...</p>
+          <div className="w-16 h-16 border-t-4 border-blue-500 border-solid rounded-full animate-spin mx-auto"></div>
+          <p className="mt-4 text-gray-700">Loading profile...</p>
         </div>
       </div>
     );
   }
 
-  if (!user) {
+  if (error || !user) {
     return (
-      <div className="d-flex min-vh-100 align-items-center justify-content-center">
-        <div className="text-center px-4">
-          <h2 className="text-danger mb-4">Unauthorized Access</h2>
-          <p className="mb-4">Please sign in to view your profile.</p>
-          <button 
-            onClick={() => router.push('/auth/signin')}
-            className="btn btn-primary"
-          >
-            Sign In
-          </button>
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-center max-w-md px-4">
+          <h2 className="text-2xl font-bold text-red-600 mb-4">Error Loading Profile</h2>
+          <p className="mb-6 text-gray-700">{error || 'Profile not found'}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-vh-100 bg-light py-4">
-      <div className="container">
-        <div className="row mb-4">
-          <div className="col">
-            <h1 className="h3 mb-0">Profile</h1>
-            <p className="text-muted">Manage your account information</p>
-          </div>
-        </div>
-
-        <div className="card mb-4 shadow-sm">
-          <div className="card-header bg-white py-3">
-            <h2 className="h5 mb-0">Account Information</h2>
-          </div>
-          <div className="card-body">
-            <div className="row align-items-center mb-4">
-              <div className="col-auto">
-                {user.image ? (
-                  <div className="position-relative" style={{ width: '100px', height: '100px' }}>
-                    <Image
-                      src={user.image}
-                      alt={user.name || 'Profile picture'}
-                      fill
-                      className="rounded-circle object-fit-cover"
-                    />
+    <div className="min-h-screen bg-gray-50 py-8">
+      <div className="container mx-auto px-4 max-w-4xl">
+        <div className="bg-white rounded-lg shadow-md overflow-hidden">
+          <div className="p-6">
+            <h1 className="text-2xl font-bold text-gray-900 mb-6">My Profile</h1>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">Personal Information</h2>
+                <dl className="space-y-4">
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Name</dt>
+                    <dd className="mt-1 text-sm text-gray-900">{user.name}</dd>
                   </div>
-                ) : (
-                  <div className="d-flex align-items-center justify-content-center rounded-circle bg-primary bg-opacity-10 text-primary"
-                       style={{ width: '100px', height: '100px' }}>
-                    <span className="h1 mb-0">
-                      {user.name?.[0]?.toUpperCase() || user.email[0].toUpperCase()}
-                    </span>
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Email</dt>
+                    <dd className="mt-1 text-sm text-gray-900">{user.email}</dd>
                   </div>
-                )}
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Phone Number</dt>
+                    <dd className="mt-1 text-sm text-gray-900">{user.phoneNumber || 'Not provided'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Join Date</dt>
+                    <dd className="mt-1 text-sm text-gray-900">
+                      {user.joinDate ? new Date(user.joinDate).toLocaleDateString() : 'Not provided'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Birthday</dt>
+                    <dd className="mt-1 text-sm text-gray-900">
+                      {user.birthday ? new Date(user.birthday).toLocaleDateString() : 'Not provided'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Anniversary</dt>
+                    <dd className="mt-1 text-sm text-gray-900">
+                      {user.anniversary ? new Date(user.anniversary).toLocaleDateString() : 'Not provided'}
+                    </dd>
+                  </div>
+                </dl>
               </div>
-              <div className="col">
-                <h3 className="h5 mb-1">{user.name || 'User'}</h3>
-                <p className="text-muted mb-0">{user.email}</p>
+              
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">Dues Information</h2>
+                <dl className="space-y-4">
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Total Dues Paid</dt>
+                    <dd className="mt-1 text-sm text-gray-900">£{user.duesAmountPaid.toFixed(2)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Outstanding Balance</dt>
+                    <dd className="mt-1 text-sm font-semibold text-red-600">
+                      £{(user.outstandingYTD || 0).toFixed(2)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Current Year</dt>
+                    <dd className="mt-1 text-sm text-gray-900">{user.year || new Date().getFullYear()}</dd>
+                  </div>
+                </dl>
               </div>
             </div>
-
-            <div className="row g-4">
-              <div className="col-md-6">
-                <label className="form-label text-muted small">Account Type</label>
-                <div className="h6">
-                  <span className={`badge ${user.isAdmin ? 'bg-primary' : 'bg-success'}`}>
-                    {user.isAdmin ? 'Administrator' : 'Member'}
-                  </span>
-                </div>
-              </div>
-            </div>
           </div>
-        </div>
-
-        <div className="d-flex justify-content-center">
-          <button
-            onClick={() => router.push(user.isAdmin ? '/admin' : '/dashboard')}
-            className="btn btn-primary"
-          >
-            Back to {user.isAdmin ? 'Admin' : 'Member'} Dashboard
-          </button>
         </div>
       </div>
     </div>

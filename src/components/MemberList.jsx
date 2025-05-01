@@ -68,7 +68,10 @@ export default function MemberList({ members, onEdit, onDelete, onRecordPayment 
         throw new Error(data.message || 'Failed to send dues status email');
       }
     } catch (error) {
-      console.error('Error sending dues email:', error);
+      // Only log minimal error info
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Failed to send dues email:', error);
+      }
       toast.error(error.message || 'An error occurred while sending email');
     } finally {
       setSendingEmail(false);
@@ -156,7 +159,7 @@ export default function MemberList({ members, onEdit, onDelete, onRecordPayment 
                     <td>{getStatusBadge(member.memberStatus)}</td>
                     <td>{formatCurrency(member.duesAmountPaid || 0)}</td>
                     <td>{formatCurrency(member.outstandingYTD || 0)}</td>
-                    <td>{formatDate(member.joinDate)}</td>
+                    <td>{member.joinDate ? formatDate(member.joinDate) : 'Not Set'}</td>
                     <td>
                       <div className="btn-group" role="group">
                         <button

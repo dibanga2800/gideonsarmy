@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { Member, PaymentMethod } from '@/types';
 
-export default function RecordPaymentPage() {
+const PAYMENT_METHODS: PaymentMethod[] = ['cash', 'card', 'transfer', 'cheque'];
+
+function PaymentForm() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { data: session, status } = useSession();
@@ -17,13 +19,13 @@ export default function RecordPaymentPage() {
   
   // Form fields
   const [amount, setAmount] = useState('');
-  const [method, setMethod] = useState<PaymentMethod>(PaymentMethod.CASH);
+  const [method, setMethod] = useState<PaymentMethod>('cash');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [month, setMonth] = useState('');
   const [year, setYear] = useState(new Date().getFullYear().toString());
   
   // Get the member ID from the URL query parameters
-  const memberId = searchParams.get('memberId');
+  const memberId = searchParams?.get('memberId') ?? null;
   
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -43,8 +45,13 @@ export default function RecordPaymentPage() {
       }
       
       // Fetch member details
-      fetch(`/api/members/${memberId}`)
-        .then(res => res.json())
+      fetch(`/api/admin/members/${memberId}`)
+        .then(res => {
+          if (!res.ok) {
+            throw new Error('Failed to fetch member data');
+          }
+          return res.json();
+        })
         .then(data => {
           setMember(data);
           setIsLoading(false);
@@ -81,7 +88,7 @@ export default function RecordPaymentPage() {
         },
         body: JSON.stringify({
           memberId: member.id,
-          amount,
+          amount: parseFloat(amount),
           date,
           method,
           month,
@@ -168,7 +175,7 @@ export default function RecordPaymentPage() {
                 <div>
                   <dt className="text-sm font-medium text-gray-500">Total Dues Owed</dt>
                   <dd className="mt-1 text-lg text-gray-900 font-semibold text-red-600">
-                    ${member.totalDuesOwed.toFixed(2)}
+                    £{member.totalDuesOwed.toFixed(2)}
                   </dd>
                 </div>
               </dl>
@@ -199,94 +206,100 @@ export default function RecordPaymentPage() {
             <form onSubmit={handleSubmit} className="space-y-6">
               <div>
                 <label htmlFor="amount" className="block text-sm font-medium text-gray-700">
-                  Amount ($) <span className="text-red-500">*</span>
+                  Amount (£)
                 </label>
                 <input
                   type="number"
                   id="amount"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
+                  name="amount"
                   step="0.01"
                   min="0"
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                   required
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
               
               <div>
                 <label htmlFor="method" className="block text-sm font-medium text-gray-700">
-                  Payment Method <span className="text-red-500">*</span>
+                  Payment Method
                 </label>
                 <select
                   id="method"
+                  name="method"
+                  required
                   value={method}
                   onChange={(e) => setMethod(e.target.value as PaymentMethod)}
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                  required
+                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                 >
-                  <option value={PaymentMethod.CASH}>Cash</option>
-                  <option value={PaymentMethod.BANK_TRANSFER}>Bank Transfer</option>
-                  <option value={PaymentMethod.OTHER}>Other</option>
+                  {PAYMENT_METHODS.map((m) => (
+                    <option key={m} value={m}>
+                      {m.charAt(0).toUpperCase() + m.slice(1)}
+                    </option>
+                  ))}
                 </select>
               </div>
               
               <div>
                 <label htmlFor="date" className="block text-sm font-medium text-gray-700">
-                  Payment Date <span className="text-red-500">*</span>
+                  Payment Date
                 </label>
                 <input
                   type="date"
                   id="date"
+                  name="date"
+                  required
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                  required
+                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
               
-              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                <div>
-                  <label htmlFor="month" className="block text-sm font-medium text-gray-700">
-                    Month <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    id="month"
-                    value={month}
-                    onChange={(e) => setMonth(e.target.value)}
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                    required
-                  >
-                    <option value="">Select Month</option>
-                    {months.map((m) => (
-                      <option key={m} value={m}>{m}</option>
-                    ))}
-                  </select>
-                </div>
-                
-                <div>
-                  <label htmlFor="year" className="block text-sm font-medium text-gray-700">
-                    Year <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    id="year"
-                    value={year}
-                    onChange={(e) => setYear(e.target.value)}
-                    min="2020"
-                    max="2100"
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                    required
-                  />
-                </div>
+              <div>
+                <label htmlFor="month" className="block text-sm font-medium text-gray-700">
+                  Month
+                </label>
+                <select
+                  id="month"
+                  name="month"
+                  required
+                  value={month}
+                  onChange={(e) => setMonth(e.target.value)}
+                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">Select month</option>
+                  {months.map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
               </div>
               
-              <div className="flex items-center justify-end">
+              <div>
+                <label htmlFor="year" className="block text-sm font-medium text-gray-700">
+                  Year
+                </label>
+                <input
+                  type="text"
+                  id="year"
+                  name="year"
+                  pattern="\d{4}"
+                  required
+                  value={year}
+                  onChange={(e) => setYear(e.target.value)}
+                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              
+              <div className="flex justify-end">
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-blue-300"
+                  className={`px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
+                    isSubmitting ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
                 >
-                  {isSubmitting ? 'Processing...' : 'Record Payment'}
+                  {isSubmitting ? 'Recording Payment...' : 'Record Payment'}
                 </button>
               </div>
             </form>
@@ -294,5 +307,20 @@ export default function RecordPaymentPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function RecordPaymentPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-t-4 border-blue-500 border-solid rounded-full animate-spin mx-auto"></div>
+          <p className="mt-4 text-gray-700">Loading...</p>
+        </div>
+      </div>
+    }>
+      <PaymentForm />
+    </Suspense>
   );
 } 

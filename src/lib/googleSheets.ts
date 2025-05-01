@@ -26,19 +26,19 @@ const USERS_RANGE = 'Users!A2:D';
 
 // Column indices for Members sheet (0-based)
 const MEMBER_COLUMNS = {
-  NAME: 0,          // Column A
-  EMAIL: 1,         // Column B
-  PASSWORD: 2,      // Column C
-  IS_ADMIN: 3,      // Column D
-  PHONE: 4,         // Column E
-  JOIN_DATE: 5,     // Column F
-  BIRTHDAY: 6,      // Column G
-  ANNIVERSARY: 7,   // Column H
-  STATUS: 8,        // Column I
-  DUES_AMOUNT: 9,   // Column J
-  OUTSTANDING: 10,  // Column K
-  YEAR: 11         // Column L
-};
+  NAME: 0,           // Column A
+  EMAIL: 1,          // Column B
+  PASSWORD: 2,       // Column C
+  IS_ADMIN: 3,       // Column D
+  PHONE: 4,          // Column E
+  JOIN_DATE: 5,      // Column F
+  BIRTHDAY: 6,       // Column G
+  ANNIVERSARY: 7,    // Column H
+  STATUS: 8,         // Column I
+  DUES_PAID: 9,      // Column J
+  OUTSTANDING: 10,   // Column K
+  YEAR: 11          // Column L
+} as const;
 
 // Helper function to normalize boolean values
 const normalizeBoolean = (value: any): boolean => {
@@ -60,6 +60,15 @@ export const hashPassword = async (password: string): Promise<string> => {
 
 export const verifyPassword = async (plainPassword: string, hashedPassword: string): Promise<boolean> => {
   return bcrypt.compare(plainPassword, hashedPassword);
+};
+
+const logError = (message: string, error: unknown) => {
+  if (process.env.NODE_ENV === 'development') {
+    console.error(message, error);
+  } else {
+    // In production, log only the error message without sensitive details
+    console.error(message);
+  }
 };
 
 export const getUserByEmail = async (email: string): Promise<UserCredentials | null> => {
@@ -84,7 +93,7 @@ export const getUserByEmail = async (email: string): Promise<UserCredentials | n
       name: userRow[3] || ''  // Name (Column D)
     };
   } catch (error) {
-    console.error('Error fetching user by email:', error);
+    logError('Failed to fetch user details', error);
     throw new Error('Failed to fetch user details');
   }
 };
@@ -99,28 +108,24 @@ export const getMembers = async (requestingUserEmail?: string, isAdmin = false):
     });
 
     const rows = response.data.values || [];
-    const members = rows.map((row) => {
-      // Ensure all values exist with defaults
-      const member = {
-        id: row[MEMBER_COLUMNS.EMAIL] || '', // Using email as ID
-        name: row[MEMBER_COLUMNS.NAME] || '',
-        email: row[MEMBER_COLUMNS.EMAIL] || '',
-        phoneNumber: row[MEMBER_COLUMNS.PHONE] || '',
-        joinDate: row[MEMBER_COLUMNS.JOIN_DATE] || '',
-        memberStatus: (row[MEMBER_COLUMNS.STATUS] || 'inactive') as MemberStatus,
-        birthday: row[MEMBER_COLUMNS.BIRTHDAY] || '',
-        anniversaryDate: row[MEMBER_COLUMNS.ANNIVERSARY] || '',
-        duesAmountPaid: parseFloat(row[MEMBER_COLUMNS.DUES_AMOUNT]) || 0,
-        outstandingYTD: parseFloat(row[MEMBER_COLUMNS.OUTSTANDING]) || 0,
-        year: row[MEMBER_COLUMNS.YEAR] || new Date().getFullYear().toString()
-      };
+    const members = rows.map((row) => ({
+      id: row[MEMBER_COLUMNS.EMAIL] || '', // Using email as ID
+      name: row[MEMBER_COLUMNS.NAME]?.trim() || '',
+      email: row[MEMBER_COLUMNS.EMAIL]?.trim() || '',
+      phoneNumber: row[MEMBER_COLUMNS.PHONE]?.trim() || '',
+      joinDate: row[MEMBER_COLUMNS.JOIN_DATE] || '',
+      memberStatus: (row[MEMBER_COLUMNS.STATUS] || 'inactive').toLowerCase() as MemberStatus,
+      birthday: row[MEMBER_COLUMNS.BIRTHDAY] || '',
+      anniversary: row[MEMBER_COLUMNS.ANNIVERSARY] || '',
+      duesAmountPaid: parseFloat(row[MEMBER_COLUMNS.DUES_PAID]) || 0,
+      outstandingYTD: parseFloat(row[MEMBER_COLUMNS.OUTSTANDING]) || 0,
+      year: row[MEMBER_COLUMNS.YEAR] || new Date().getFullYear().toString(),
+      isAdmin: row[MEMBER_COLUMNS.IS_ADMIN] === 'true',
+      totalDuesOwed: parseFloat(row[MEMBER_COLUMNS.OUTSTANDING]) || 0
+    }));
 
-      // Clean up the data
-      member.memberStatus = member.memberStatus.toLowerCase() as MemberStatus;
-      member.name = member.name.trim();
-      member.email = member.email.trim();
-      member.phoneNumber = member.phoneNumber.trim();
-      
+    // Clean up the data
+    members.forEach(member => {
       // Ensure dates are in the correct format (dd/mm/yyyy)
       const formatDate = (date: string) => {
         if (!date) return '';
@@ -138,9 +143,7 @@ export const getMembers = async (requestingUserEmail?: string, isAdmin = false):
 
       member.joinDate = formatDate(member.joinDate);
       member.birthday = formatDate(member.birthday);
-      member.anniversaryDate = formatDate(member.anniversaryDate);
-
-      return member;
+      member.anniversary = formatDate(member.anniversary);
     });
 
     // If user is not admin, only return their own record
@@ -150,8 +153,8 @@ export const getMembers = async (requestingUserEmail?: string, isAdmin = false):
 
     return members;
   } catch (error) {
-    console.error('Error fetching members:', error);
-    throw new Error('Failed to fetch members from Google Sheets');
+    logError('Failed to fetch members list', error);
+    throw new Error('Failed to fetch members list');
   }
 };
 
@@ -169,7 +172,7 @@ export const getMemberById = async (id: string, requestingUserEmail?: string, is
     
     return member;
   } catch (error) {
-    console.error('Error fetching member by ID:', error);
+    logError('Error fetching member by ID', error);
     throw new Error('Failed to fetch member details');
   }
 };
@@ -188,7 +191,7 @@ export const getMemberByEmail = async (email: string, requestingUserEmail?: stri
     
     return member;
   } catch (error) {
-    console.error('Error fetching member by email:', error);
+    logError('Error fetching member by email', error);
     throw new Error('Failed to fetch member details');
   }
 };
@@ -272,7 +275,7 @@ export const createUser = async (userData: { email: string; password: string; na
       isAdmin: userData.isAdmin
     };
   } catch (error) {
-    console.error('Error creating user:', error);
+    logError('Error creating user', error);
     throw new Error(error instanceof Error ? error.message : 'Failed to create user');
   }
 };
@@ -296,10 +299,10 @@ export const getPayments = async (): Promise<Payment[]> => {
       method: row[4] as PaymentMethod,
       month: row[5],
       year: row[6],
-      status: row[7] as PaymentStatus,
+      status: row[7]?.toLowerCase() === 'completed' ? 'completed' : 'pending'
     }));
   } catch (error) {
-    console.error('Error fetching payments:', error);
+    logError('Error fetching payments', error);
     throw new Error('Failed to fetch payments from Google Sheets');
   }
 };
@@ -309,7 +312,7 @@ export const getMemberPayments = async (memberId: string): Promise<Payment[]> =>
     const payments = await getPayments();
     return payments.filter((payment) => payment.memberId === memberId);
   } catch (error) {
-    console.error('Error fetching member payments:', error);
+    logError('Error fetching member payments', error);
     throw new Error('Failed to fetch member payments');
   }
 };
@@ -351,12 +354,17 @@ export const addPayment = async (payment: Omit<Payment, 'id'>): Promise<Payment>
     // Update member's total dues owed
     const member = await getMemberByEmail(payment.memberId);
     if (member) {
-      await updateMemberDues(member.email, member.duesAmountPaid + payment.amount, member.outstandingYTD, member.year);
+      await updateMemberDues(
+        member.email, 
+        (member.duesAmountPaid || 0) + payment.amount, 
+        member.outstandingYTD || 0, 
+        member.year || new Date().getFullYear().toString()
+      );
     }
     
     return newPayment;
   } catch (error) {
-    console.error('Error adding payment:', error);
+    logError('Error adding payment', error);
     throw new Error('Failed to add payment to Google Sheets');
   }
 };
@@ -386,7 +394,7 @@ export const updateMemberDues = async (id: string, newDuesAmount: number, outsta
     const updatedRow = [
       currentRow[MEMBER_COLUMNS.NAME],           // A: Name
       currentRow[MEMBER_COLUMNS.EMAIL],          // B: Email
-      currentRow[MEMBER_COLUMNS.PASSWORD],       // C: Password
+      currentRow[MEMBER_COLUMNS.EMAIL],          // C: Email (duplicate since we don't store password)
       currentRow[MEMBER_COLUMNS.IS_ADMIN],       // D: IsAdmin
       currentRow[MEMBER_COLUMNS.PHONE],          // E: Phone Number
       currentRow[MEMBER_COLUMNS.JOIN_DATE],      // F: Join Date
@@ -421,7 +429,7 @@ export const updateMemberDues = async (id: string, newDuesAmount: number, outsta
     }
 
   } catch (error) {
-    console.error('Error updating member dues:', error);
+    logError('Error updating member dues', error);
     throw new Error('Failed to update member dues');
   }
 };
@@ -457,7 +465,7 @@ export const getDashboardStats = async () => {
       recentActivities
     };
   } catch (error) {
-    console.error('Error getting dashboard stats:', error);
+    logError('Error getting dashboard stats', error);
     throw new Error('Failed to get dashboard statistics');
   }
 };
@@ -652,7 +660,7 @@ export const initializeGoogleSheet = async () => {
       message: 'Google Sheet structure initialized successfully',
     };
   } catch (error) {
-    console.error('Error initializing Google Sheet structure:', error);
+    logError('Error initializing Google Sheet structure', error);
     throw new Error(`Failed to initialize Google Sheet structure: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 };
@@ -871,12 +879,16 @@ export const insertDummyData = async () => {
       usersCount: userValues.length
     };
   } catch (error) {
-    console.error('Error inserting dummy data:', error);
+    logError('Error inserting dummy data', error);
     throw new Error('Failed to insert dummy data');
   }
 };
 
-export const createMember = async (memberData: Omit<Member, 'id' | 'duesAmountPaid' | 'outstandingYTD'>): Promise<Member> => {
+interface ExtendedMemberData extends Omit<Member, 'id' | 'duesAmountPaid' | 'outstandingYTD'> {
+  password?: string;
+}
+
+export const createMember = async (memberData: ExtendedMemberData): Promise<Member> => {
   try {
     const auth = await getAuth();
     
@@ -885,7 +897,9 @@ export const createMember = async (memberData: Omit<Member, 'id' | 'duesAmountPa
       id: memberData.email, // Using email as ID
       ...memberData,
       duesAmountPaid: 0,
-      outstandingYTD: 120 // Initial outstanding amount
+      outstandingYTD: 120, // Initial outstanding amount
+      totalDuesOwed: 120,
+      memberStatus: memberData.memberStatus || 'inactive'
     };
 
     // Add member to the Members sheet in correct column order
@@ -896,40 +910,30 @@ export const createMember = async (memberData: Omit<Member, 'id' | 'duesAmountPa
       valueInputOption: 'USER_ENTERED',
       requestBody: {
         values: [[
-          newMember.name,           // A: Name
-          newMember.email,          // B: Email
-          '',                       // C: Password (empty in Members sheet)
-          formatBoolean(newMember.isAdmin || false), // D: IsAdmin
-          newMember.phoneNumber,    // E: Phone Number
-          newMember.joinDate,       // F: Join Date
-          newMember.birthday,       // G: Birthday
-          newMember.anniversaryDate,// H: Anniversary
-          newMember.memberStatus,   // I: Status
-          newMember.duesAmountPaid, // J: Dues Amount
-          newMember.outstandingYTD, // K: Outstanding
-          newMember.year           // L: Year
+          newMember.name,            // A: Name
+          newMember.email,           // B: Email
+          '',                        // C: Password (empty in Members sheet)
+          formatBoolean(memberData.isAdmin || false), // D: IsAdmin
+          newMember.phoneNumber,     // E: Phone Number
+          newMember.joinDate,        // F: Join Date
+          newMember.birthday,        // G: Birthday
+          newMember.anniversary,     // H: Anniversary
+          newMember.memberStatus,    // I: Status
+          newMember.duesAmountPaid,  // J: Dues Amount
+          newMember.outstandingYTD,  // K: Outstanding
+          newMember.year            // L: Year
         ]]
       }
     });
 
-    // If password is provided, also create a user account
-    if (memberData.password) {
-      await createUser({
-        email: newMember.email,
-        password: memberData.password,
-        name: newMember.name,
-        isAdmin: newMember.isAdmin || false
-      });
-    }
-
     return newMember;
   } catch (error) {
-    console.error('Error creating member:', error);
+    logError('Error creating member', error);
     throw new Error('Failed to create member');
   }
 };
 
-export const updateMember = async (id: string, updates: Partial<Member> & { anniversary?: string }): Promise<Member> => {
+export const updateMember = async (id: string, updates: Partial<Member>): Promise<Member> => {
   try {
     const auth = await getAuth();
     
@@ -957,40 +961,40 @@ export const updateMember = async (id: string, updates: Partial<Member> & { anni
     const updatedMember = {
       ...currentMember,
       ...updates,
-      // Handle both anniversary and anniversaryDate properties
-      anniversaryDate: updates.anniversary || updates.anniversaryDate || currentMember.anniversaryDate
+      // Ensure required fields
+      memberStatus: (updates.memberStatus || currentMember.memberStatus || 'inactive').toLowerCase(),
+      duesAmountPaid: updates.duesAmountPaid ?? currentMember.duesAmountPaid ?? 0,
+      outstandingYTD: updates.outstandingYTD ?? currentMember.outstandingYTD ?? 0,
+      totalDuesOwed: updates.outstandingYTD ?? currentMember.outstandingYTD ?? 0
     };
 
-    // Prepare the update with all columns to maintain data integrity
-    const updatedRow = [
-      updatedMember.name || currentMember.name,                    // A: Name
-      updatedMember.email || currentMember.email,                  // B: Email
-      currentMember.password || '',                                // C: Password (preserve existing)
-      currentMember.isAdmin ? 'true' : 'false',                    // D: IsAdmin (preserve existing)
-      updatedMember.phoneNumber || currentMember.phoneNumber,      // E: Phone Number
-      updatedMember.joinDate || currentMember.joinDate,           // F: Join Date
-      updatedMember.birthday || currentMember.birthday,           // G: Birthday
-      updatedMember.anniversaryDate,                              // H: Anniversary
-      updatedMember.memberStatus || currentMember.memberStatus,    // I: Status
-      (updatedMember.duesAmountPaid || currentMember.duesAmountPaid || 0).toString(), // J: Dues Amount
-      (updatedMember.outstandingYTD || currentMember.outstandingYTD || 0).toString(), // K: Outstanding
-      updatedMember.year || currentMember.year                    // L: Year
-    ];
-
-    // Update the entire row
+    // Update the row in the sheet
     await sheets.spreadsheets.values.update({
       auth,
       spreadsheetId: SPREADSHEET_ID,
       range: `Members!A${rowIndex + 2}:L${rowIndex + 2}`,
       valueInputOption: 'USER_ENTERED',
       requestBody: {
-        values: [updatedRow]
+        values: [[
+          updatedMember.name,            // A: Name
+          updatedMember.email,           // B: Email
+          '',                            // C: Password (empty in Members sheet)
+          formatBoolean(updatedMember.isAdmin || false), // D: IsAdmin
+          updatedMember.phoneNumber,     // E: Phone Number
+          updatedMember.joinDate,        // F: Join Date
+          updatedMember.birthday,        // G: Birthday
+          updatedMember.anniversary,     // H: Anniversary
+          updatedMember.memberStatus,    // I: Status
+          updatedMember.duesAmountPaid,  // J: Dues Amount
+          updatedMember.outstandingYTD,  // K: Outstanding
+          updatedMember.year             // L: Year
+        ]]
       }
     });
 
     return updatedMember;
   } catch (error) {
-    console.error('Error updating member:', error);
+    logError('Error updating member', error);
     throw new Error('Failed to update member');
   }
 };
@@ -1020,7 +1024,7 @@ export const deleteMember = async (id: string): Promise<void> => {
       range: `Members!A${rowIndex + 2}:K${rowIndex + 2}`,
     });
   } catch (error) {
-    console.error('Error deleting member:', error);
+    logError('Error deleting member', error);
     throw new Error('Failed to delete member');
   }
 };
@@ -1043,7 +1047,7 @@ export const getUsers = async (): Promise<UserCredentials[]> => {
       name: row[3] || ''   // Name (Column D)
     }));
   } catch (error) {
-    console.error('Error fetching users:', error);
+    logError('Error fetching users', error);
     throw new Error('Failed to fetch users from Google Sheets');
   }
 };
@@ -1094,7 +1098,7 @@ export const updateUser = async (email: string, updates: { name?: string; isAdmi
       isAdmin: normalizeBoolean(updatedRow[2])
     };
   } catch (error) {
-    console.error('Error updating user:', error);
+    logError('Error updating user', error);
     throw error;
   }
 };
@@ -1144,11 +1148,11 @@ export const deleteUser = async (email: string): Promise<void> => {
         });
       }
     } catch (memberError) {
-      console.error('Error checking/deleting member record:', memberError);
+      logError('Error checking/deleting member record', memberError);
       // Continue with user deletion even if member deletion fails
     }
   } catch (error) {
-    console.error('Error deleting user:', error);
+    logError('Error deleting user', error);
     throw new Error('Failed to delete user');
   }
 }; 

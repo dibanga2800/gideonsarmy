@@ -121,7 +121,7 @@ This is a friendly reminder that you currently have an outstanding balance of $$
 Please arrange to make your payment at your earliest convenience.
 
 Your membership details:
-- Membership since: ${new Date(member.joinDate).toLocaleDateString()}
+- Membership since: ${member.joinDate ? new Date(member.joinDate).toLocaleDateString() : 'Not available'}
 - Total outstanding: $${member.totalDuesOwed.toFixed(2)}
 
 Thank you for your attention to this matter.
@@ -140,7 +140,7 @@ Men's Fellowship Admin Team
   <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
     <h3 style="margin-top: 0; color: #444;">Your membership details:</h3>
     <ul style="list-style-type: none; padding-left: 0;">
-      <li><strong>Membership since:</strong> ${new Date(member.joinDate).toLocaleDateString()}</li>
+      <li><strong>Membership since:</strong> ${member.joinDate ? new Date(member.joinDate).toLocaleDateString() : 'Not available'}</li>
       <li><strong>Total outstanding:</strong> $${member.totalDuesOwed.toFixed(2)}</li>
     </ul>
   </div>

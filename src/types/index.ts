@@ -1,22 +1,14 @@
-export type PaymentMethod = 'cash' | 'transfer' | 'check';
-export type PaymentStatus = 'pending' | 'completed' | 'failed';
+import { DefaultSession } from 'next-auth';
+
+export type PaymentStatus = 'completed' | 'pending';
+export type PaymentMethod = 'cash' | 'card' | 'transfer' | 'cheque';
 export type MemberStatus = 'active' | 'inactive' | 'on leave';
 
-export interface Member {
+export interface User {
   id: string;
-  name: string;
   email: string;
-  phoneNumber: string;
-  password?: string; // Optional as it should never be exposed to frontend
-  isAdmin?: boolean; // Optional as it's only used during creation
-  joinDate: string;
-  memberStatus: MemberStatus;
-  birthday: string;
-  anniversaryDate: string;
-  duesAmountPaid: number;
-  outstandingYTD: number;
-  year: string;
-  payments?: Payment[]; // Optional array of payments
+  name?: string;
+  isAdmin: boolean;
 }
 
 export interface Payment {
@@ -30,6 +22,24 @@ export interface Payment {
   status: PaymentStatus;
 }
 
+export interface Member {
+  id: string;
+  name: string;
+  email: string;
+  password?: string;
+  isAdmin: boolean;
+  phoneNumber: string | null;
+  joinDate: string | null;
+  birthday: string | null;
+  anniversary: string | null;
+  memberStatus: string;
+  duesAmountPaid: number;
+  outstandingYTD: number;
+  totalDuesOwed: number;
+  year: string;
+  payments?: Payment[];
+}
+
 export interface UserCredentials {
   id?: string;     // Added for consistency with User interface
   email: string;
@@ -38,10 +48,37 @@ export interface UserCredentials {
   name: string;
 }
 
-export interface ApiResponse<T = any> {
-  success: boolean;
-  message: string;
+export interface ApiResponse<T> {
   data?: T;
+  error?: string;
+  message?: string;
+  status: number;
+}
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+export interface PaymentFormData {
+  amount: number;
+  date: string;
+  method: PaymentMethod;
+  month: string;
+  year: string;
+}
+
+export interface MemberFormData {
+  name: string;
+  email: string;
+  phoneNumber?: string;
+  joinDate?: string;
+  birthday?: string;
+  anniversary?: string;
+  memberStatus: string;
 }
 
 export interface DashboardStats {
@@ -54,11 +91,4 @@ export interface DashboardStats {
     memberName: string;
     timestamp: string;
   }[];
-}
-
-export interface User {
-  email: string;
-  name?: string;
-  image?: string;
-  isAdmin: boolean;
 } 
