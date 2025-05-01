@@ -3,6 +3,8 @@ import { getServerSession } from 'next-auth';
 import { getMemberById, recordPayment } from '@/lib/sheets';
 import { authOptions } from '@/app/api/auth/[...nextauth]/auth.config';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
