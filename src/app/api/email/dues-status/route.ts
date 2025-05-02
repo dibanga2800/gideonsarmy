@@ -4,13 +4,7 @@ import { getMemberById } from "@/lib/sheets";
 import { sendDuesStatusEmail } from "@/lib/email";
 import { authOptions } from "@/lib/auth";
 
-const logError = (message: string, error: unknown) => {
-  if (process.env.NODE_ENV === 'development') {
-    console.error(message, error);
-  } else {
-    console.error(message);
-  }
-};
+export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
@@ -92,7 +86,6 @@ export async function POST(request: NextRequest) {
     });
     
   } catch (error) {
-    logError('Failed to send dues status email', error);
     let errorMessage = "Failed to send dues status email";
     
     if (error instanceof Error) {

@@ -2,6 +2,7 @@ import { Member } from '@/types';
 import nodemailer from 'nodemailer';
 import { Resend } from 'resend';
 import { sendGmailEmail } from './gmail';
+import { google } from 'googleapis';
 
 // Extend the Member type for email purposes
 interface MemberWithDues extends Member {
@@ -32,6 +33,54 @@ const transporter = MAIL_PROVIDER === 'nodemailer'
 // Email sender configuration
 const EMAIL_FROM = process.env.EMAIL_FROM || 'noreply@gideonsarmy.com';
 const EMAIL_REPLY_TO = process.env.EMAIL_REPLY_TO || 'noreply@gideonsarmy.com';
+
+// Initialize Google Sheets for logging
+const getAuth = async () => {
+  const auth = new google.auth.GoogleAuth({
+    credentials: {
+      client_email: process.env.GOOGLE_CLIENT_EMAIL,
+      private_key: process.env.GOOGLE_PRIVATE_KEY,
+    },
+    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+  });
+  return auth;
+};
+
+// Log email attempt
+async function logEmailAttempt(
+  recipientEmail: string,
+  emailType: string,
+  status: 'success' | 'failed',
+  error?: string
+) {
+  try {
+    const auth = await getAuth();
+    const sheets = google.sheets({ version: 'v4', auth });
+    
+    // Prepare log entry
+    const timestamp = new Date().toISOString();
+    const logEntry = [
+      timestamp,
+      recipientEmail,
+      status,
+      emailType,
+      error || ''
+    ];
+    
+    // Append to Email_Logs sheet
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      range: 'Email_Logs!A2:E',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [logEntry]
+      }
+    });
+  } catch (error) {
+    console.error('Failed to log email attempt:', error);
+    // Don't throw error here as it's just logging
+  }
+}
 
 // Send birthday greeting email
 export async function sendBirthdayEmail(member: any) {
@@ -333,105 +382,69 @@ Gideon's Army
 }
 
 // Generic email sending function
-export async function sendEmail({ 
-  to, 
-  subject, 
-  text, 
-  html 
-}: { 
-  to: string; 
-  subject: string; 
-  text: string; 
-  html: string; 
-}) {
-  // Determine mail provider with development fallback
-  const mailProvider = process.env.MAIL_PROVIDER || (process.env.NODE_ENV === 'development' ? 'simulation' : 'gmail');
-  
-  // Log email details for debugging
-  console.log('Attempting to send email:', { 
-    provider: mailProvider,
-    to,
-    subject,
-    from: EMAIL_FROM,
-    nodeEnv: process.env.NODE_ENV
-  });
-  
+export async function sendEmail({ to, subject, text, html }: { to: string; subject: string; text: string; html: string; }) {
   try {
-    if (mailProvider === 'gmail') {
-      // Send email using Gmail API
-      console.log('Using Gmail API provider');
-      const result = await sendGmailEmail({
-        to,
-        subject,
-        text,
-        html,
-        from: EMAIL_FROM
-      });
-      
-      console.log('Email sent successfully via Gmail API:', result);
-      return result;
-    } else if (mailProvider === 'resend' && resend) {
-      // Send email using Resend
-      console.log('Using Resend provider');
-      const { data, error } = await resend.emails.send({
-        from: EMAIL_FROM,
-        replyTo: EMAIL_REPLY_TO,
-        to,
-        subject,
-        text,
-        html,
-      });
-      
-      if (error) {
-        console.error('Resend API error:', error);
-        throw new Error(`Resend error: ${error.message}`);
-      }
-      
-      console.log('Email sent successfully via Resend:', data);
-      return data;
-    } else if (mailProvider === 'nodemailer' && transporter) {
-      // Send email using Nodemailer
-      console.log('Using Nodemailer provider');
-      const info = await transporter.sendMail({
-        from: EMAIL_FROM,
-        to,
-        subject,
-        text,
-        html,
-        headers: {
-          'Reply-To': EMAIL_REPLY_TO,
-        },
-      });
-      
-      console.log('Email sent successfully via Nodemailer:', info);
-      return info;
-    } else {
-      // Fallback for development - simulate email sending
-      console.log('⚠️ Using email simulation mode');
-      console.log('================ EMAIL CONTENT ================');
-      console.log(`To: ${to}`);
-      console.log(`Subject: ${subject}`);
-      console.log(`From: ${EMAIL_FROM}`);
-      console.log('----------- TEXT CONTENT -----------');
-      console.log(text);
-      console.log('----------- HTML CONTENT -----------');
-      console.log(html);
-      console.log('================ END EMAIL ================');
-      
-      // Return a mock successful response
-      return {
-        id: `mock_${Date.now()}`,
-        status: 'simulated',
-        message: 'Email simulated for development'
-      };
+    let result;
+    
+    switch (MAIL_PROVIDER) {
+      case 'resend':
+        if (!resend) throw new Error('Resend client not initialized');
+        result = await resend.emails.send({
+          from: EMAIL_FROM,
+          to,
+          subject,
+          text,
+          html,
+          replyTo: EMAIL_REPLY_TO
+        });
+        break;
+        
+      case 'nodemailer':
+        if (!transporter) throw new Error('Nodemailer transporter not initialized');
+        result = await transporter.sendMail({
+          from: EMAIL_FROM,
+          to,
+          subject,
+          text,
+          html,
+          replyTo: EMAIL_REPLY_TO
+        });
+        break;
+        
+      case 'gmail':
+        result = await sendGmailEmail({
+          to,
+          subject,
+          text,
+          html,
+          from: EMAIL_FROM
+        });
+        break;
+        
+      default:
+        // Simulation mode for development
+        console.log('Email simulation mode:', {
+          to,
+          subject,
+          textLength: text.length,
+          htmlLength: html.length
+        });
+        result = { status: 'simulated', to, subject };
     }
+    
+    // Log successful email
+    await logEmailAttempt(to, subject, 'success');
+    
+    return result;
   } catch (error) {
-    console.error('Error sending email:', error);
-    // Add detailed error information
-    if (error instanceof Error) {
-      throw new Error(`Email sending failed: ${error.message}`);
-    } else {
-      throw new Error('Email sending failed with unknown error');
-    }
+    // Log failed email
+    await logEmailAttempt(
+      to,
+      subject,
+      'failed',
+      error instanceof Error ? error.message : 'Unknown error'
+    );
+    
+    throw error;
   }
 } 

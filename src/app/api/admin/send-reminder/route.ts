@@ -5,6 +5,8 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/auth.config';
 import { sendReminderEmail } from '@/lib/email';
 import { ApiResponse, Member } from '@/types';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     // Check authentication

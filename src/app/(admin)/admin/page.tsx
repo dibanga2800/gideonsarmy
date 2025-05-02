@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { formatCurrency } from '@/lib/utils';
+import { sendDuesStatusEmail, sendBulkDuesStatusEmails } from '@/lib/actions/email';
 
 // Define interface for member with events
 interface MemberWithEvents {
@@ -73,7 +74,7 @@ export default function AdminDashboard() {
       const users = await usersResponse.json();
       
       // Get current month 
-      const currentMonth = new Date().getMonth() + 1; // JavaScript months are 0-indexed
+      const currentMonth = new Date().getMonth() + 1;
       
       // Filter members with birthdays or anniversaries in current month
       const membersWithBirthdays = members.filter((member: any) => {
@@ -83,10 +84,8 @@ export default function AdminDashboard() {
         let birthMonth;
         
         if (member.birthday.includes('/')) {
-          // DD/MM/YYYY format
           birthMonth = parseInt(member.birthday.split('/')[1]);
         } else if (member.birthday.includes('-')) {
-          // YYYY-MM-DD format
           birthMonth = parseInt(member.birthday.split('-')[1]);
         }
         
@@ -96,14 +95,11 @@ export default function AdminDashboard() {
       const membersWithAnniversaries = members.filter((member: any) => {
         if (!member.anniversary) return false;
         
-        // Handle different date formats
         let anniversaryMonth;
         
         if (member.anniversary.includes('/')) {
-          // DD/MM/YYYY format
           anniversaryMonth = parseInt(member.anniversary.split('/')[1]);
         } else if (member.anniversary.includes('-')) {
-          // YYYY-MM-DD format
           anniversaryMonth = parseInt(member.anniversary.split('-')[1]);
         }
         
@@ -278,59 +274,6 @@ export default function AdminDashboard() {
       const errorMessage = error instanceof Error 
         ? error.message 
         : 'Failed to send email. Please try again later.';
-        
-      toast.error(errorMessage);
-    }
-  };
-
-  // Add function to test email setup
-  const handleTestEmail = async () => {
-    let toastId: string | number = '';
-    
-    try {
-      // Get admin email address
-      const adminEmail = session?.user?.email;
-      
-      if (!adminEmail) {
-        toast.error('No admin email available to send test');
-        return;
-      }
-      
-      // Show loading toast
-      toastId = toast.loading('Sending test email...');
-      
-      // Call the test email API
-      const response = await fetch('/api/email/test', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          to: adminEmail
-        }),
-      });
-      
-      // Parse response
-      const data = await response.json();
-      
-      // Dismiss loading toast
-      toast.dismiss(toastId);
-      
-      if (response.ok) {
-        toast.success('Test email sent successfully. Please check your inbox.');
-        console.log('Email test result:', data);
-      } else {
-        throw new Error(data.message || 'Failed to send test email');
-      }
-    } catch (error) {
-      // Dismiss loading toast if exists
-      if (toastId) toast.dismiss(toastId);
-      
-      console.error('Error sending test email:', error);
-      
-      const errorMessage = error instanceof Error
-        ? error.message
-        : 'Failed to send test email. Check console for details.';
         
       toast.error(errorMessage);
     }

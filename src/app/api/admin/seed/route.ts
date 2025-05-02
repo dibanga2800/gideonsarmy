@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { insertDummyData } from '@/lib/googleSheets';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     // Check if Google Sheets is configured
