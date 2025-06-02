@@ -5,8 +5,6 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { formatCurrency } from '@/lib/utils';
-import { sendDuesStatusEmail, sendBulkDuesStatusEmails } from '@/lib/actions/email';
 
 // Define interface for member with events
 interface MemberWithEvents {
@@ -17,13 +15,15 @@ interface MemberWithEvents {
   anniversary: string;
   hasBirthday: boolean;
   hasAnniversary: boolean;
+  joinDate: string;
+  memberStatus: string;
 }
 
 // Define interface for dashboard stats
 interface DashboardStats {
   totalMembers: number;
   totalUsers: number;
-  totalAmount: number;
+  activeMembers: number;
   currentMonthBirthdays: number;
   currentMonthAnniversaries: number;
 }
@@ -34,12 +34,13 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState<DashboardStats>({
     totalMembers: 0,
     totalUsers: 0,
-    totalAmount: 0,
+    activeMembers: 0,
     currentMonthBirthdays: 0,
     currentMonthAnniversaries: 0
   });
   const [membersWithEvents, setMembersWithEvents] = useState<MemberWithEvents[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const membersPerPage = 10;
 
@@ -60,124 +61,151 @@ export default function AdminDashboard() {
     pageNumbers.push(i);
   }
 
-  // Fetch stats for the dashboard
+  // Function to check if a date is in current month
+  const isCurrentMonth = (dateString: string): boolean => {
+    if (!dateString || dateString.trim() === '' || dateString === 'N/A') return false;
+    
+    const currentMonth = new Date().getMonth() + 1; // 1-based month
+    const currentYear = new Date().getFullYear();
+    let dateMonth: number;
+    let dateYear: number;
+    
+    try {
+      // Handle various date formats
+      if (dateString.includes('/')) {
+        // Handle dd/mm/yyyy format
+        const parts = dateString.split('/');
+        if (parts.length === 3) {
+          const [day, month, year] = parts;
+          dateMonth = parseInt(month, 10);
+          dateYear = parseInt(year, 10);
+        } else {
+          console.warn('Invalid dd/mm/yyyy format:', dateString);
+          return false;
+        }
+      } else if (dateString.includes('-')) {
+        // Handle yyyy-mm-dd format (converting from Google Sheets)
+        const parts = dateString.split('-');
+        if (parts.length === 3) {
+          const [year, month, day] = parts;
+          dateYear = parseInt(year, 10);
+          dateMonth = parseInt(month, 10);
+        } else {
+          console.warn('Invalid yyyy-mm-dd format:', dateString);
+          return false;
+        }
+      } else {
+        console.warn('Unrecognized date format:', dateString);
+        return false;
+      }
+      
+      // Validate month and year
+      if (isNaN(dateMonth) || isNaN(dateYear) || dateMonth < 1 || dateMonth > 12) {
+        console.warn('Invalid month or year:', { dateString, dateMonth, dateYear });
+        return false;
+      }
+      
+      // Check if it's current month (ignore year for birthday/anniversary checking)
+      const isMatch = dateMonth === currentMonth;
+      
+      // Debug logging for date checking
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`📅 Date check: "${dateString}" -> month: ${dateMonth}, current month: ${currentMonth}, match: ${isMatch ? '✅' : '❌'}`);
+      }
+      
+      return isMatch;
+    } catch (error) {
+      console.error('Error parsing date:', dateString, error);
+      return false;
+    }
+  };
+
+  // Fetch stats and members with events
   const fetchStats = useCallback(async () => {
     try {
       setLoading(true);
       
-      // Fetch members
-      const membersResponse = await fetch('/api/members');
-      const members = await membersResponse.json();
+      // Fetch members and users in parallel
+      const [membersResponse, usersResponse] = await Promise.all([
+        fetch('/api/admin/members'),
+        fetch('/api/users')
+      ]);
       
-      // Fetch users
-      const usersResponse = await fetch('/api/users');
+      if (!membersResponse.ok) {
+        throw new Error(`Failed to fetch members: ${membersResponse.status}`);
+      }
+      
+      if (!usersResponse.ok) {
+        throw new Error(`Failed to fetch users: ${usersResponse.status}`);
+      }
+      
+      const members = await membersResponse.json();
       const users = await usersResponse.json();
       
-      // Get current month 
-      const currentMonth = new Date().getMonth() + 1;
+      // Calculate stats
+      const activeMembers = members.filter((m: any) => m.status?.toLowerCase() === 'active').length;
+      const currentMonthBirthdays = members.filter((m: any) => isCurrentMonth(m.birthday)).length;
+      const currentMonthAnniversaries = members.filter((m: any) => isCurrentMonth(m.anniversary)).length;
       
-      // Filter members with birthdays or anniversaries in current month
-      const membersWithBirthdays = members.filter((member: any) => {
-        if (!member.birthday) return false;
-        
-        // Handle different date formats
-        let birthMonth;
-        
-        if (member.birthday.includes('/')) {
-          birthMonth = parseInt(member.birthday.split('/')[1]);
-        } else if (member.birthday.includes('-')) {
-          birthMonth = parseInt(member.birthday.split('-')[1]);
-        }
-        
-        return birthMonth === currentMonth;
-      });
-      
-      const membersWithAnniversaries = members.filter((member: any) => {
-        if (!member.anniversary) return false;
-        
-        let anniversaryMonth;
-        
-        if (member.anniversary.includes('/')) {
-          anniversaryMonth = parseInt(member.anniversary.split('/')[1]);
-        } else if (member.anniversary.includes('-')) {
-          anniversaryMonth = parseInt(member.anniversary.split('-')[1]);
-        }
-        
-        return anniversaryMonth === currentMonth;
-      });
-      
-      // Calculate statistics
-      const totalPaid = members.reduce((sum: number, m: any) => sum + (parseFloat(m.amountPaid) || 0), 0);
-      
-      // Set statistics
       setStats({
         totalMembers: members.length,
         totalUsers: users.length,
-        totalAmount: totalPaid,
-        currentMonthBirthdays: membersWithBirthdays.length,
-        currentMonthAnniversaries: membersWithAnniversaries.length
+        activeMembers,
+        currentMonthBirthdays,
+        currentMonthAnniversaries
       });
       
-      // Prepare members with events for the table
-      const combineMembers = [...membersWithBirthdays, ...membersWithAnniversaries];
+      // Get members with events this month
+      const membersWithCurrentEvents = members.filter((m: any) => 
+        isCurrentMonth(m.birthday) || isCurrentMonth(m.anniversary)
+      ).map((m: any) => ({
+        ...m,
+        hasBirthday: isCurrentMonth(m.birthday),
+        hasAnniversary: isCurrentMonth(m.anniversary)
+      }));
       
-      // Remove duplicates and enrich data
-      const uniqueMembers = Array.from(new Set(combineMembers.map((m: any) => m.id)))
-        .map(id => {
-          const member = combineMembers.find((m: any) => m.id === id);
-          return {
-            id: member.id,
-            name: member.name,
-            email: member.email,
-            birthday: member.birthday || 'N/A',
-            anniversary: member.anniversary || 'N/A',
-            hasBirthday: membersWithBirthdays.some((m: any) => m.id === member.id),
-            hasAnniversary: membersWithAnniversaries.some((m: any) => m.id === member.id)
-          };
-        });
-      
-      setMembersWithEvents(uniqueMembers);
+      setMembersWithEvents(membersWithCurrentEvents);
       
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
-      toast.error('Failed to load dashboard data');
+      toast.error('Failed to load dashboard data. Please try again.');
     } finally {
       setLoading(false);
     }
   }, []);
 
-  const handleInitializeSheet = async () => {
-    try {
-      toast.info('Initializing Google Sheets...');
-      const response = await fetch('/api/admin/initialize', { method: 'POST' });
-      
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Failed to initialize Google Sheet');
-      }
-      
-      toast.success('Google Sheet initialized successfully!');
-    } catch (error) {
-      console.error('Error initializing sheet:', error);
-      toast.error('Failed to initialize Google Sheet');
-    }
+  // Refresh data function
+  const refreshData = async () => {
+    setRefreshing(true);
+    await fetchStats();
+    setRefreshing(false);
+    toast.success('Dashboard data refreshed');
   };
 
-  const handleSeedTestData = async () => {
+  // Fix sheet formatting function
+  const fixSheetFormatting = async () => {
     try {
-      toast.info('Seeding test data...');
-      const response = await fetch('/api/admin/seed', { method: 'POST' });
+      toast.info('Fixing Google Sheets formatting...');
       
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Failed to seed test data');
+      const response = await fetch('/api/admin/fix-formatting', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok && data.success) {
+        toast.success(`✅ ${data.message}. Fixed ${data.rowsFixed} rows.`);
+        // Refresh the dashboard data after fixing
+        await fetchStats();
+      } else {
+        throw new Error(data.error || 'Failed to fix sheet formatting');
       }
-      
-      toast.success('Test data seeded successfully!');
-      fetchStats(); // Refresh stats after seeding
     } catch (error) {
-      console.error('Error seeding test data:', error);
-      toast.error('Failed to seed test data');
+      console.error('Error fixing sheet formatting:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to fix sheet formatting');
     }
   };
 
@@ -186,8 +214,7 @@ export default function AdminDashboard() {
     if (!dateString || dateString === 'N/A') return 'N/A';
     
     try {
-      // Try various date formats
-      let date;
+      let date: Date;
       
       if (dateString.includes('/')) {
         // DD/MM/YYYY format
@@ -197,8 +224,7 @@ export default function AdminDashboard() {
         // YYYY-MM-DD format
         date = new Date(dateString);
       } else {
-        // Try direct parsing
-        date = new Date(dateString);
+        return dateString;
       }
       
       if (isNaN(date.getTime())) return dateString;
@@ -222,7 +248,6 @@ export default function AdminDashboard() {
       
       // Determine which email to send
       if (hasBirthday && hasAnniversary) {
-        // If both, ask which one to send
         const userChoice = window.confirm(
           "This member has both a birthday and anniversary this month. Press OK to send birthday greetings or Cancel to send anniversary greetings."
         );
@@ -236,10 +261,7 @@ export default function AdminDashboard() {
         return;
       }
       
-      // Show loading toast
       toastId = toast.loading(`Sending ${emailType} email...`);
-      
-      console.log('Sending email request:', { memberId, emailType });
       
       const response = await fetch('/api/email/event-greetings', {
         method: 'POST',
@@ -252,11 +274,7 @@ export default function AdminDashboard() {
         }),
       });
       
-      // Parse the response
       const data = await response.json();
-      console.log('Email API response:', data);
-      
-      // Dismiss the loading toast
       toast.dismiss(toastId);
       
       if (response.ok) {
@@ -265,12 +283,9 @@ export default function AdminDashboard() {
         throw new Error(data.message || `Failed to send ${emailType} email`);
       }
     } catch (error) {
-      // Dismiss the loading toast if it exists
       if (toastId) toast.dismiss(toastId);
-      
       console.error('Error sending email:', error);
       
-      // Display a more informative error message
       const errorMessage = error instanceof Error 
         ? error.message 
         : 'Failed to send email. Please try again later.';
@@ -310,109 +325,147 @@ export default function AdminDashboard() {
       <div className="row mb-4">
         <div className="col">
           <h1 className="h3">Admin Dashboard</h1>
+          <p className="text-muted">Manage members with birthdays and anniversaries this month</p>
         </div>
       </div>
 
       {/* Statistics Cards */}
       <div className="row mb-4">
-        <div className="col-md-4 mb-3">
+        <div className="col-md-3 mb-3">
           <div className="card bg-primary text-white h-100">
             <div className="card-body">
               <div className="d-flex justify-content-between align-items-center">
                 <div>
                   <h6 className="card-title">Total Members</h6>
-                  <h2 className="display-5 fw-bold">{stats.totalMembers}</h2>
+                  <h2 className="display-6 fw-bold">{stats.totalMembers}</h2>
                 </div>
                 <div>
                   <i className="bi bi-people-fill fs-1"></i>
                 </div>
               </div>
-              <Link href="/admin/members" className="text-white">
+              <Link href="/admin/members" className="text-white text-decoration-none">
                 <small>View all members <i className="bi bi-arrow-right"></i></small>
               </Link>
             </div>
           </div>
         </div>
         
-        <div className="col-md-4 mb-3">
+        <div className="col-md-3 mb-3">
+          <div className="card bg-info text-white h-100">
+            <div className="card-body">
+              <div className="d-flex justify-content-between align-items-center">
+                <div>
+                  <h6 className="card-title">Active Members</h6>
+                  <h2 className="display-6 fw-bold">{stats.activeMembers}</h2>
+                </div>
+                <div>
+                  <i className="bi bi-person-check-fill fs-1"></i>
+                </div>
+              </div>
+              <small>Members with active status</small>
+            </div>
+          </div>
+        </div>
+        
+        <div className="col-md-3 mb-3">
           <div className="card bg-success text-white h-100">
             <div className="card-body">
               <div className="d-flex justify-content-between align-items-center">
                 <div>
                   <h6 className="card-title">Birthdays This Month</h6>
-                  <h2 className="display-5 fw-bold">{stats.currentMonthBirthdays}</h2>
+                  <h2 className="display-6 fw-bold">{stats.currentMonthBirthdays}</h2>
                 </div>
                 <div>
                   <i className="bi bi-gift fs-1"></i>
                 </div>
               </div>
-              <span className="text-white">
-                <small>Members with birthdays in {new Date().toLocaleDateString('en-US', { month: 'long' })}</small>
-              </span>
+              <small>Birthdays in {new Date().toLocaleDateString('en-US', { month: 'long' })}</small>
             </div>
           </div>
         </div>
         
-        <div className="col-md-4 mb-3">
+        <div className="col-md-3 mb-3">
           <div className="card bg-danger text-white h-100">
             <div className="card-body">
               <div className="d-flex justify-content-between align-items-center">
                 <div>
                   <h6 className="card-title">Anniversaries This Month</h6>
-                  <h2 className="display-5 fw-bold">{stats.currentMonthAnniversaries}</h2>
+                  <h2 className="display-6 fw-bold">{stats.currentMonthAnniversaries}</h2>
                 </div>
                 <div>
                   <i className="bi bi-calendar-heart fs-1"></i>
                 </div>
               </div>
-              <span className="text-white">
-                <small>Members with anniversaries in {new Date().toLocaleDateString('en-US', { month: 'long' })}</small>
-              </span>
+              <small>Anniversaries in {new Date().toLocaleDateString('en-US', { month: 'long' })}</small>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Members with Birthdays and Anniversaries Table */}
+      {/* Members with Events This Month Table */}
       <div className="row">
         <div className="col-12">
           <div className="card">
-            <div className="card-header">
-              <h5 className="card-title mb-0">Members with Events This Month</h5>
+            <div className="card-header d-flex justify-content-between align-items-center">
+              <h5 className="card-title mb-0">
+                Members with Events This Month ({membersWithEvents.length})
+              </h5>
+              <span className="badge bg-secondary">
+                {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+              </span>
             </div>
             <div className="card-body p-0">
               <div className="table-responsive">
-                <table className="table table-hover">
-                  <thead>
+                <table className="table table-hover mb-0">
+                  <thead className="table-light">
                     <tr>
                       <th>#</th>
                       <th>Name</th>
+                      <th>Email</th>
                       <th>Birthday</th>
                       <th>Anniversary</th>
+                      <th>Status</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {currentMembers.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="text-center py-4">No members with birthdays or anniversaries this month</td>
+                        <td colSpan={7} className="text-center py-4">
+                          <div className="text-muted">
+                            <i className="bi bi-calendar-x fs-1 d-block mb-2"></i>
+                            No members with birthdays or anniversaries this month
+                          </div>
+                        </td>
                       </tr>
                     ) : (
                       currentMembers.map((member, index) => (
                         <tr key={member.id}>
                           <td>{indexOfFirstMember + index + 1}</td>
-                          <td>{member.name}</td>
+                          <td>
+                            <strong>{member.name}</strong>
+                            <br />
+                            <small className="text-muted">Joined: {formatDate(member.joinDate)}</small>
+                          </td>
+                          <td>{member.email}</td>
                           <td>
                             {formatDate(member.birthday)}
                             {member.hasBirthday && (
-                              <span className="badge bg-success ms-2">This Month</span>
+                              <span className="badge bg-success ms-2">This Month!</span>
                             )}
                           </td>
                           <td>
                             {formatDate(member.anniversary)}
                             {member.hasAnniversary && (
-                              <span className="badge bg-danger ms-2">This Month</span>
+                              <span className="badge bg-danger ms-2">This Month!</span>
                             )}
+                          </td>
+                          <td>
+                            <span className={`badge ${
+                              member.memberStatus === 'active' ? 'bg-success' : 'bg-secondary'
+                            }`}>
+                              {member.memberStatus}
+                            </span>
                           </td>
                           <td>
                             <button
@@ -436,7 +489,7 @@ export default function AdminDashboard() {
               </div>
 
               {/* Pagination */}
-              {membersWithEvents.length > 0 && (
+              {membersWithEvents.length > membersPerPage && (
                 <div className="card-footer bg-white">
                   <div className="d-flex justify-content-between align-items-center">
                     <div className="text-muted">
@@ -477,6 +530,33 @@ export default function AdminDashboard() {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Quick Actions */}
+      <div className="row mt-4">
+        <div className="col-12">
+          <div className="card">
+            <div className="card-header">
+              <h6 className="card-title mb-0">Quick Actions</h6>
+            </div>
+            <div className="card-body">
+              <div className="row">
+                <div className="col-md-6 mb-2">
+                  <Link href="/admin/members" className="btn btn-outline-primary w-100">
+                    <i className="bi bi-people me-2"></i>
+                    Manage All Members
+                  </Link>
+                </div>
+                <div className="col-md-6 mb-2">
+                  <Link href="/admin/users" className="btn btn-outline-secondary w-100">
+                    <i className="bi bi-person-gear me-2"></i>
+                    Manage Users
+                  </Link>
+                </div>
+              </div>
             </div>
           </div>
         </div>

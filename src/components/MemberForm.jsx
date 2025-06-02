@@ -69,11 +69,18 @@ export default function MemberForm({
     const { name, value, type, checked } = e.target;
     
     // Handle different input types
-    const newValue = type === 'checkbox' ? checked : 
-                    type === 'number' ? parseFloat(value) || 0 : 
-                    value;
-                    
-    setFormData((prev) => ({ ...prev, [name]: newValue }));
+    if (name === 'phoneNumber') {
+      // Only allow numbers
+      const numbersOnly = value.replace(/\D/g, '');
+      // Restrict to maximum length of 13 digits (for international format)
+      const truncated = numbersOnly.slice(0, 13);
+      setFormData((prev) => ({ ...prev, [name]: truncated }));
+    } else {
+      const newValue = type === 'checkbox' ? checked : 
+                      type === 'number' ? parseFloat(value) || 0 : 
+                      value;
+      setFormData((prev) => ({ ...prev, [name]: newValue }));
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -90,6 +97,26 @@ export default function MemberForm({
     if (!emailRegex.test(formData.email)) {
       toast.error('Please enter a valid email address');
       return;
+    }
+
+    // Validate phone number format if provided
+    if (formData.phoneNumber) {
+      if (!/^\d+$/.test(formData.phoneNumber)) {
+        toast.error('Phone number must contain only numbers');
+        return;
+      }
+      if (!formData.phoneNumber.startsWith('234') && !formData.phoneNumber.startsWith('0')) {
+        toast.error('Phone number must start with either 234 (international format) or 0 (local format)');
+        return;
+      }
+      if (formData.phoneNumber.startsWith('234') && formData.phoneNumber.length !== 13) {
+        toast.error('International phone number (234) must be exactly 13 digits');
+        return;
+      }
+      if (formData.phoneNumber.startsWith('0') && formData.phoneNumber.length !== 11) {
+        toast.error('Local phone number (0) must be exactly 11 digits');
+        return;
+      }
     }
 
     // If creating new member, require password
@@ -186,13 +213,19 @@ export default function MemberForm({
                 <div className="col-md-6">
                   <label htmlFor="phoneNumber" className="form-label">Phone Number</label>
                   <input 
-                    type="text"
+                    type="tel"
                     className="form-control" 
                     id="phoneNumber"
                     name="phoneNumber"
                     value={formData.phoneNumber}
                     onChange={handleInputChange}
+                    placeholder="e.g., 2348012345678 or 08012345678"
+                    pattern="[0-9]*"
+                    inputMode="numeric"
                   />
+                  <small className="text-muted">
+                    Enter numbers only. Format: 2348012345678 (international) or 08012345678 (local)
+                  </small>
                 </div>
                 
                 <div className="col-md-6">
