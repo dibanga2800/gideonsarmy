@@ -145,18 +145,7 @@ export default function MemberDashboard() {
   const getPaymentStatus = (month: string, year: string) => {
     if (!member) return 'Not Paid';
     
-    // Check if there is a direct payment for this month/year
-    if (member.payments && member.payments.length > 0) {
-      const payment = member.payments.find(
-        p => p.month === month && p.year === year
-      );
-      
-      if (payment && payment.status === 'completed') {
-        return 'Paid';
-      }
-    }
-    
-    // Get the month index (0-based) and year
+    // Get the month index (0-based)
     const monthIndex = months.findIndex(m => m === month);
     const currentYear = parseInt(year);
     
@@ -175,44 +164,102 @@ export default function MemberDashboard() {
       }
     }
     
-    // Calculate number of months member has been with the organization in the current year
-    let totalMonthsToPayThisYear = 0;
+    // Calculate total payments and carryover from previous years
+    let totalPaidWithCarryover = 0;
+    let carryoverFromPrevYears = 0;
     
+    // Get join date info once
+    let joinYear = 0;
+    let joinMonth = 0;
     if (member.joinDate) {
       const joinDate = new Date(member.joinDate);
-      const joinYear = joinDate.getFullYear();
-      const joinMonth = joinDate.getMonth(); // 0-based
-      
-      if (currentYear === joinYear) {
-        // If joined this year, only count months since joining
-        totalMonthsToPayThisYear = monthIndex - joinMonth + 1;
-      } else if (currentYear > joinYear) {
-        // If checking future years, count all months up to current month
-        totalMonthsToPayThisYear = monthIndex + 1;
+      joinYear = joinDate.getFullYear();
+      joinMonth = joinDate.getMonth();
+    }
+
+    if (member.payments) {
+      // Sort payments by year to process them chronologically
+      const sortedPayments = [...member.payments].sort((a, b) => 
+        parseInt(a.year) - parseInt(b.year)
+      );
+
+      // Process all payments up to and including the current year
+      sortedPayments.forEach(payment => {
+        const paymentYear = parseInt(payment.year);
+        if (paymentYear < currentYear) {
+          // For previous years, calculate any excess payment
+          const yearTotal = sortedPayments
+            .filter(p => p.year === payment.year && p.status === 'completed')
+            .reduce((sum, p) => sum + p.amount, 0);
+          
+          // Calculate months that needed payment for that year
+          const yearStartMonth = paymentYear === joinYear ? joinMonth : 0;
+          const monthsInYear = 12 - yearStartMonth;
+          const requiredAmount = monthsInYear * MONTHLY_DUES;
+          
+          // Add excess to carryover
+          if (yearTotal > requiredAmount) {
+            carryoverFromPrevYears += yearTotal - requiredAmount;
+          }
+        } else if (paymentYear === currentYear && payment.status === 'completed') {
+          totalPaidWithCarryover += payment.amount;
+        }
+      });
+    }
+
+    // Add carryover to current year's payments
+    totalPaidWithCarryover += carryoverFromPrevYears;
+    
+    // Calculate how many months the total payment covers
+    const monthsCovered = Math.floor(totalPaidWithCarryover / MONTHLY_DUES);
+    
+    // Calculate which months are covered based on join date
+    let startMonth = 0; // Default to January
+    if (member.joinDate) {
+      const joinDate = new Date(member.joinDate);
+      if (joinDate.getFullYear() === currentYear) {
+        startMonth = joinDate.getMonth(); // Start from join month
       }
-    } else {
-      // If no join date, default to counting all months
-      totalMonthsToPayThisYear = monthIndex + 1;
     }
     
-    // Only process if there are months to pay
-    if (totalMonthsToPayThisYear <= 0) {
-      return 'N/A';
+    // Check if this specific month is covered
+    const monthsFromStart = monthIndex - startMonth;
+    if (monthsFromStart < 0) return 'N/A';
+    
+    return monthsFromStart < monthsCovered ? 'Paid' : 'Not Paid';
+  };
+
+  // Add this function after getPaymentStatus
+  const calculateCarryover = () => {
+    if (!member?.payments) return 0;
+    
+    let totalCarryover = 0;
+    const currentYear = new Date().getFullYear();
+    
+    // Get join date info
+    let joinYear = currentYear;
+    let joinMonth = 0;
+    if (member.joinDate) {
+      const joinDate = new Date(member.joinDate);
+      joinYear = joinDate.getFullYear();
+      joinMonth = joinDate.getMonth();
     }
-    
-    // Get payments specifically for this year
-    const currentYearPayments = member.payments?.filter(p => p.year === year) || [];
-    const totalPaidThisYear = currentYearPayments.reduce((sum, payment) => 
-      sum + (payment.status === 'completed' ? payment.amount : 0), 0);
-    
-    // If no specific payments found, use the duesAmountPaid
-    const effectivePayment = totalPaidThisYear > 0 ? totalPaidThisYear : member.duesAmountPaid;
-    
-    // Calculate how many months the payment covers
-    const monthsCovered = Math.floor(effectivePayment / MONTHLY_DUES);
-    
-    // Check if payment covers this specific month
-    return (monthsCovered >= totalMonthsToPayThisYear) ? 'Paid' : 'Not Paid';
+
+    // Calculate total paid amount for current year
+    const currentYearPayments = member.payments
+      .filter(p => p.status === 'completed' && parseInt(p.year) === currentYear)
+      .reduce((sum, p) => sum + p.amount, 0);
+
+    // Calculate required amount from join date until December
+    const monthsInYear = 12 - joinMonth; // This will give us months from join month to December
+    const requiredAmount = monthsInYear * MONTHLY_DUES;
+
+    // Calculate carryover
+    if (currentYearPayments > requiredAmount) {
+      totalCarryover = currentYearPayments - requiredAmount;
+    }
+
+    return totalCarryover;
   };
 
   // Get available years from payments
@@ -304,6 +351,17 @@ export default function MemberDashboard() {
                 <label className="form-label text-muted small">Dues Paid</label>
                 <div className="h6 fw-bold text-success">
                   {formatCurrency(member.duesAmountPaid || 0)}
+                </div>
+              </div>
+              <div className="col-md-6">
+                <label className="form-label text-muted small">Carryover Amount</label>
+                <div className="h6 fw-bold text-primary">
+                  {formatCurrency(calculateCarryover())}
+                  {calculateCarryover() > 0 && (
+                    <span className="ms-2 small text-muted">
+                      (Will be applied to future months)
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="col-md-6">

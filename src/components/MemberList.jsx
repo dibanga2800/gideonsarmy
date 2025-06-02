@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { formatCurrency } from "@/lib/utils";
 import { toast } from 'sonner';
+import { sendDuesStatusEmail, sendBulkDuesStatusEmails } from '@/lib/actions/email';
 
 export default function MemberList({ members, onEdit, onDelete, onRecordPayment }) {
   const [deleteModal, setDeleteModal] = useState(false);
@@ -8,6 +9,7 @@ export default function MemberList({ members, onEdit, onDelete, onRecordPayment 
   const [sendingEmail, setSendingEmail] = useState(false);
   const [emailMemberId, setEmailMemberId] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [sendingBulkEmails, setSendingBulkEmails] = useState(false);
   const membersPerPage = 10;
 
   // Calculate pagination
@@ -84,21 +86,32 @@ export default function MemberList({ members, onEdit, onDelete, onRecordPayment 
       setSendingEmail(true);
       setEmailMemberId(member.id);
       
-      const response = await fetch(`/api/admin/members/${member.id}/send-dues-email`, {
-        method: 'POST'
-      });
+      await sendDuesStatusEmail(member.id);
       
-      if (!response.ok) {
-        throw new Error('Failed to send dues email');
-      }
-      
-      toast.success('Dues reminder email sent successfully');
     } catch (error) {
       console.error('Error sending dues email:', error);
-      toast.error('Failed to send dues reminder email');
+      // Toast is already handled in the sendDuesStatusEmail function
     } finally {
       setSendingEmail(false);
       setEmailMemberId(null);
+    }
+  };
+
+  const handleSendBulkEmails = async () => {
+    const membersWithEmail = members.filter(member => member.email);
+    
+    if (membersWithEmail.length === 0) {
+      toast.error('No members with email addresses found');
+      return;
+    }
+
+    try {
+      setSendingBulkEmails(true);
+      await sendBulkDuesStatusEmails(membersWithEmail.map(m => m.id));
+    } catch (error) {
+      console.error('Error sending bulk emails:', error);
+    } finally {
+      setSendingBulkEmails(false);
     }
   };
 
@@ -106,6 +119,27 @@ export default function MemberList({ members, onEdit, onDelete, onRecordPayment 
     <>
       <div className="card">
         <div className="card-body">
+          <div className="d-flex justify-content-between align-items-center mb-4">
+            <h5 className="card-title mb-0">Members List</h5>
+            <button
+              className="btn btn-primary"
+              onClick={handleSendBulkEmails}
+              disabled={sendingBulkEmails}
+            >
+              {sendingBulkEmails ? (
+                <>
+                  <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                  Sending Emails...
+                </>
+              ) : (
+                <>
+                  <i className="bi bi-envelope me-2"></i>
+                  Send All Dues Status
+                </>
+              )}
+            </button>
+          </div>
+          
           <div className="table-responsive">
             <table className="table table-striped table-hover">
               <thead className="table-light">
@@ -139,18 +173,6 @@ export default function MemberList({ members, onEdit, onDelete, onRecordPayment 
                       <td>{formatDate(member.joinDate)}</td>
                       <td>
                         <div className="btn-group" role="group">
-                          <button
-                            className="btn btn-outline-info btn-sm"
-                            onClick={() => handleSendDuesEmail(member)}
-                            disabled={sendingEmail && emailMemberId === member.id}
-                            title="Send dues status email"
-                          >
-                            {sendingEmail && emailMemberId === member.id ? (
-                              <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                            ) : (
-                              <i className="bi bi-envelope"></i>
-                            )}
-                          </button>
                           <button
                             className="btn btn-outline-primary btn-sm"
                             onClick={() => onRecordPayment(member)}

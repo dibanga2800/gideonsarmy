@@ -4,6 +4,8 @@ import { getMemberById } from "@/lib/sheets";
 import { sendBirthdayEmail, sendAnniversaryEmail } from "@/lib/email";
 import { authOptions } from "@/lib/auth";
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     // Verify the user is authenticated and is an admin

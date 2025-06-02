@@ -131,14 +131,9 @@ export default function SignInPage() {
                   </div>
 
                   <div className="mb-4">
-                    <div className="d-flex justify-content-between align-items-center mb-1">
-                      <label htmlFor="password" className="form-label small fw-medium mb-0">
-                        Password
-                      </label>
-                      <Link href="/forgot-password" className="text-decoration-none small text-primary">
-                        Forgot password?
-                      </Link>
-                    </div>
+                    <label htmlFor="password" className="form-label small fw-medium">
+                      Password
+                    </label>
                     <div className="input-group">
                       <span className="input-group-text bg-light border-end-0">
                         <i className="bi bi-lock text-muted"></i>

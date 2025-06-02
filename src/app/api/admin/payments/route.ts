@@ -4,6 +4,8 @@ import { addPayment, getMemberById, updateMemberDues } from '@/lib/googleSheets'
 import { authOptions } from '@/app/api/auth/[...nextauth]/auth.config';
 import { PaymentMethod, PaymentStatus, ApiResponse, Payment } from '@/types';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     // Check authentication

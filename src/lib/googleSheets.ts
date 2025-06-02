@@ -206,21 +206,103 @@ export const getMembers = async (requestingUserEmail?: string, isAdmin = false):
     });
 
     const rows = response.data.values || [];
-    const members = rows.map((row) => ({
-      id: row[MEMBER_COLUMNS.EMAIL] || '', // Using email as ID
-      name: row[MEMBER_COLUMNS.NAME]?.trim() || '',
-      email: row[MEMBER_COLUMNS.EMAIL]?.trim() || '',
-      phoneNumber: row[MEMBER_COLUMNS.PHONE]?.trim() || '',
-      joinDate: formatDate(row[MEMBER_COLUMNS.JOIN_DATE]) || '',
-      memberStatus: (row[MEMBER_COLUMNS.STATUS]?.toLowerCase() || 'inactive') as MemberStatus,
-      birthday: formatDate(row[MEMBER_COLUMNS.BIRTHDAY]) || '',
-      anniversary: formatDate(row[MEMBER_COLUMNS.ANNIVERSARY]) || '',
-      duesAmountPaid: parseFloat(row[MEMBER_COLUMNS.DUES_PAID]) || 0,
-      outstandingYTD: parseFloat(row[MEMBER_COLUMNS.OUTSTANDING]) || 0,
-      year: row[MEMBER_COLUMNS.YEAR] || new Date().getFullYear().toString(),
-      isAdmin: normalizeBoolean(row[MEMBER_COLUMNS.IS_ADMIN]),
-      totalDuesOwed: parseFloat(row[MEMBER_COLUMNS.OUTSTANDING]) || 0
-    }));
+    
+    // Log raw data for debugging
+    console.log('Raw sheet data:', {
+      totalRows: rows.length,
+      sampleRows: rows.slice(0, 3)
+    });
+    
+    const members = rows
+      .filter((row) => {
+        // Filter out empty rows or rows without essential data
+        const hasName = row[MEMBER_COLUMNS.NAME] && row[MEMBER_COLUMNS.NAME].trim() !== '';
+        const hasEmail = row[MEMBER_COLUMNS.EMAIL] && row[MEMBER_COLUMNS.EMAIL].trim() !== '';
+        
+        if (!hasName || !hasEmail) {
+          console.log('Filtering out row with missing data:', { name: row[MEMBER_COLUMNS.NAME], email: row[MEMBER_COLUMNS.EMAIL] });
+          return false;
+        }
+        
+        return true;
+      })
+      .map((row) => {
+        // Enhanced date formatting with better error handling
+        const formatDateSafely = (dateValue: any): string => {
+          if (!dateValue || dateValue.toString().trim() === '') return '';
+          
+          const dateStr = dateValue.toString().trim();
+          
+          // Handle dd/mm/yyyy format
+          if (dateStr.includes('/')) {
+            const parts = dateStr.split('/');
+            if (parts.length === 3) {
+              const [day, month, year] = parts;
+              // Validate the parts
+              if (day && month && year && !isNaN(Number(day)) && !isNaN(Number(month)) && !isNaN(Number(year))) {
+                return dateStr; // Keep original format
+              }
+            }
+          }
+          
+          // Handle yyyy-mm-dd format
+          if (dateStr.includes('-')) {
+            const parts = dateStr.split('-');
+            if (parts.length === 3) {
+              const [year, month, day] = parts;
+              // Validate the parts and convert to dd/mm/yyyy
+              if (year && month && day && !isNaN(Number(year)) && !isNaN(Number(month)) && !isNaN(Number(day))) {
+                return `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year}`;
+              }
+            }
+          }
+          
+          // If it's just a year or invalid format, return empty
+          if (dateStr.length === 4 && !isNaN(Number(dateStr))) {
+            console.warn('Date field contains only year:', dateStr);
+            return '';
+          }
+          
+          console.warn('Unrecognized date format:', dateStr);
+          return '';
+        };
+
+        const member = {
+          id: row[MEMBER_COLUMNS.EMAIL] || '', // Using email as ID
+          name: row[MEMBER_COLUMNS.NAME]?.trim() || '',
+          email: row[MEMBER_COLUMNS.EMAIL]?.trim() || '',
+          phoneNumber: row[MEMBER_COLUMNS.PHONE]?.trim() || '',
+          joinDate: formatDateSafely(row[MEMBER_COLUMNS.JOIN_DATE]),
+          memberStatus: (row[MEMBER_COLUMNS.STATUS]?.toLowerCase() || 'inactive') as MemberStatus,
+          birthday: formatDateSafely(row[MEMBER_COLUMNS.BIRTHDAY]),
+          anniversary: formatDateSafely(row[MEMBER_COLUMNS.ANNIVERSARY]),
+          duesAmountPaid: parseFloat(row[MEMBER_COLUMNS.DUES_PAID]) || 0,
+          outstandingYTD: parseFloat(row[MEMBER_COLUMNS.OUTSTANDING]) || 0,
+          year: row[MEMBER_COLUMNS.YEAR] || new Date().getFullYear().toString(),
+          isAdmin: normalizeBoolean(row[MEMBER_COLUMNS.IS_ADMIN]),
+          totalDuesOwed: parseFloat(row[MEMBER_COLUMNS.OUTSTANDING]) || 0
+        };
+
+        // Log member data for debugging
+        if (member.birthday || member.anniversary) {
+          console.log('Member with dates:', {
+            name: member.name,
+            email: member.email,
+            birthday: member.birthday,
+            anniversary: member.anniversary,
+            rawBirthday: row[MEMBER_COLUMNS.BIRTHDAY],
+            rawAnniversary: row[MEMBER_COLUMNS.ANNIVERSARY]
+          });
+        }
+
+        return member;
+      });
+
+    console.log('Processed members:', {
+      totalProcessed: members.length,
+      membersWithBirthdays: members.filter(m => m.birthday).length,
+      membersWithAnniversaries: members.filter(m => m.anniversary).length
+    });
 
     // If user is not admin, only return their own record
     if (!isAdmin && requestingUserEmail) {
@@ -272,12 +354,102 @@ export const getMemberByEmail = async (email: string, requestingUserEmail?: stri
   }
 };
 
-export const createUser = async (userData: { email: string; password: string; name: string; isAdmin: boolean }) => {
+// Helper function to calculate outstanding dues based on join date
+const calculateOutstandingDues = (joinDate?: string): number => {
+  const MONTHLY_DUES = 10; // £10 per month
+  
+  if (!joinDate) {
+    // If no join date provided, use current date
+    const today = new Date();
+    const day = today.getDate().toString().padStart(2, '0');
+    const month = (today.getMonth() + 1).toString().padStart(2, '0');
+    const year = today.getFullYear();
+    joinDate = `${day}/${month}/${year}`;
+  }
+  
+  // Parse the join date
+  let joinDateObj: Date;
+  
+  if (joinDate.includes('/')) {
+    // Handle dd/mm/yyyy format (primary format)
+    const [day, month, year] = joinDate.split('/');
+    joinDateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+  } else if (joinDate.includes('-')) {
+    // Handle yyyy-mm-dd format (convert for legacy compatibility)
+    const [year, month, day] = joinDate.split('-');
+    joinDateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+  } else {
+    // Fallback to current date
+    joinDateObj = new Date();
+  }
+  
+  const joinMonth = joinDateObj.getMonth(); // 0-based (0 = January, 11 = December)
+  const joinYear = joinDateObj.getFullYear();
+  const currentYear = new Date().getFullYear();
+  
+  console.log('Calculating dues for:', {
+    joinDate,
+    joinMonth: joinMonth + 1, // Show 1-based for clarity
+    joinYear,
+    currentYear
+  });
+  
+  // If joining in a future year, no dues for current year
+  if (joinYear > currentYear) {
+    return 0;
+  }
+  
+  // If joining in a previous year, full year dues
+  if (joinYear < currentYear) {
+    return 12 * MONTHLY_DUES;
+  }
+  
+  // If joining in current year, calculate remaining months
+  // joinMonth is 0-based, so months remaining = 12 - joinMonth
+  const monthsRemaining = 12 - joinMonth;
+  
+  console.log('Months remaining in year:', monthsRemaining, 'Amount:', monthsRemaining * MONTHLY_DUES);
+  
+  return monthsRemaining * MONTHLY_DUES;
+};
+
+export const createUser = async (userData: { email: string; password: string; name: string; isAdmin: boolean; birthday?: string; anniversary?: string; phoneNumber?: string; joinDate?: string }) => {
   try {
     const auth = await getAuth();
     
     // Hash the password
     const hashedPassword = await hashPassword(userData.password);
+    
+    // Helper function to format date to dd/mm/yyyy
+    const formatToddmmyyyy = (dateString?: string): string => {
+      if (!dateString) return '';
+      
+      // If already in dd/mm/yyyy format, return as is
+      if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateString)) {
+        return dateString;
+      }
+      
+      // If in yyyy-mm-dd format, convert to dd/mm/yyyy
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+        const [year, month, day] = dateString.split('-');
+        return `${day}/${month}/${year}`;
+      }
+      
+      // Try to parse other formats
+      try {
+        const date = new Date(dateString);
+        if (!isNaN(date.getTime())) {
+          const day = date.getDate().toString().padStart(2, '0');
+          const month = (date.getMonth() + 1).toString().padStart(2, '0');
+          const year = date.getFullYear();
+          return `${day}/${month}/${year}`;
+        }
+      } catch (e) {
+        console.warn('Could not parse date:', dateString);
+      }
+      
+      return '';
+    };
     
     // First, check if user already exists
     const checkResponse = await sheets.spreadsheets.values.get({
@@ -298,7 +470,7 @@ export const createUser = async (userData: { email: string; password: string; na
       auth,
       spreadsheetId: SPREADSHEET_ID,
       range: 'Users!A:D',
-      valueInputOption: 'USER_ENTERED',
+      valueInputOption: 'RAW',
       requestBody: {
         values: [[
           userData.email,
@@ -320,26 +492,41 @@ export const createUser = async (userData: { email: string; password: string; na
     const memberExists = memberEmails.some(row => row[0] === userData.email);
 
     if (!memberExists) {
-      const today = new Date().toISOString().split('T')[0];
+      // Format the join date or use today
+      const joinDate = userData.joinDate ? formatToddmmyyyy(userData.joinDate) : formatToddmmyyyy(new Date().toISOString().split('T')[0]);
+      const birthday = formatToddmmyyyy(userData.birthday);
+      const anniversary = formatToddmmyyyy(userData.anniversary);
+      
+      const outstandingAmount = calculateOutstandingDues(joinDate);
+      
+      console.log('Creating member with formatted dates:', {
+        name: userData.name,
+        email: userData.email,
+        joinDate,
+        birthday,
+        anniversary,
+        phoneNumber: userData.phoneNumber || ''
+      });
+      
       await sheets.spreadsheets.values.append({
         auth,
         spreadsheetId: SPREADSHEET_ID,
-        range: 'Members!A:K',
-        valueInputOption: 'USER_ENTERED',
+        range: 'Members!A:L',
+        valueInputOption: 'RAW',
         requestBody: {
           values: [[
             userData.name,           // A: Name
             userData.email,          // B: Email
             '',                      // C: Password (empty in Members sheet)
             formatBoolean(userData.isAdmin), // D: IsAdmin
-            '',                      // E: Phone Number
-            today,                   // F: Join Date
-            '',                      // G: Birthday
-            '',                      // H: Anniversary
+            userData.phoneNumber || '',      // E: Phone Number
+            joinDate,                // F: Join Date (dd/mm/yyyy)
+            birthday,                // G: Birthday (dd/mm/yyyy)
+            anniversary,             // H: Anniversary (dd/mm/yyyy)
             'active',                // I: Status
-            '0',                     // J: Dues Amount
-            '120',                   // K: Outstanding
-            new Date().getFullYear().toString() // L: Year
+            0,                       // J: Dues Amount Paid (as number)
+            outstandingAmount,       // K: Outstanding (as number, not string)
+            new Date().getFullYear() // L: Year (as number, not string)
           ]]
         }
       });
@@ -616,7 +803,7 @@ export const initializeGoogleSheet = async () => {
       },
     });
 
-    // Format the header row
+    // Format the header row and set column formats
     const formatRequests = [
       // Make header row bold
       {
@@ -639,6 +826,66 @@ export const initializeGoogleSheet = async () => {
             }
           },
           fields: 'userEnteredFormat(textFormat,backgroundColor)'
+        }
+      },
+      // Format Dues Amount column (J) as number (not currency)
+      {
+        repeatCell: {
+          range: {
+            sheetId: response.data.sheets?.find(s => s.properties?.title === 'Members')?.properties?.sheetId,
+            startColumnIndex: 9, // Column J (0-indexed)
+            endColumnIndex: 10,
+            startRowIndex: 1, // Skip header
+          },
+          cell: {
+            userEnteredFormat: {
+              numberFormat: {
+                type: 'NUMBER',
+                pattern: '0'
+              }
+            }
+          },
+          fields: 'userEnteredFormat.numberFormat'
+        }
+      },
+      // Format Outstanding column (K) as number (not currency)
+      {
+        repeatCell: {
+          range: {
+            sheetId: response.data.sheets?.find(s => s.properties?.title === 'Members')?.properties?.sheetId,
+            startColumnIndex: 10, // Column K (0-indexed)
+            endColumnIndex: 11,
+            startRowIndex: 1, // Skip header
+          },
+          cell: {
+            userEnteredFormat: {
+              numberFormat: {
+                type: 'NUMBER',
+                pattern: '0'
+              }
+            }
+          },
+          fields: 'userEnteredFormat.numberFormat'
+        }
+      },
+      // Format Year column (L) as number (not currency)
+      {
+        repeatCell: {
+          range: {
+            sheetId: response.data.sheets?.find(s => s.properties?.title === 'Members')?.properties?.sheetId,
+            startColumnIndex: 11, // Column L (0-indexed)
+            endColumnIndex: 12,
+            startRowIndex: 1, // Skip header
+          },
+          cell: {
+            userEnteredFormat: {
+              numberFormat: {
+                type: 'NUMBER',
+                pattern: '0000'
+              }
+            }
+          },
+          fields: 'userEnteredFormat.numberFormat'
         }
       },
       // Auto-resize columns
@@ -964,18 +1211,104 @@ interface ExtendedMemberData extends Omit<Member, 'id' | 'duesAmountPaid' | 'out
   password?: string;
 }
 
+const validatePhoneNumber = (phoneNumber: string): string => {
+  // Check if the input contains any non-numeric characters
+  if (/[^0-9]/.test(phoneNumber)) {
+    throw new Error('Phone number must contain only numbers (0-9). Do not include spaces, dashes, or any other characters.');
+  }
+
+  // Now we know we only have numbers
+  if (phoneNumber.startsWith('234')) {
+    // International format
+    if (phoneNumber.length !== 13) {
+      throw new Error('Nigerian phone number in international format (234) must be exactly 13 digits long');
+    }
+    return phoneNumber;
+  } else if (phoneNumber.startsWith('0')) {
+    // Local format
+    if (phoneNumber.length !== 11) {
+      throw new Error('Nigerian phone number in local format (0) must be exactly 11 digits long');
+    }
+    return '234' + phoneNumber.substring(1);
+  } else {
+    throw new Error('Phone number must start with either 234 (international format) or 0 (local format)');
+  }
+};
+
 export const createMember = async (memberData: ExtendedMemberData): Promise<Member> => {
   try {
     const auth = await getAuth();
+    
+    // Validate phone number if provided
+    if (memberData.phoneNumber) {
+      memberData.phoneNumber = validatePhoneNumber(memberData.phoneNumber);
+    }
+
+    // Helper function to format date to dd/mm/yyyy
+    const formatToddmmyyyy = (dateString?: string | null): string => {
+      if (!dateString) return '';
+      
+      // If already in dd/mm/yyyy format, return as is
+      if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateString)) {
+        return dateString;
+      }
+      
+      // If in yyyy-mm-dd format, convert to dd/mm/yyyy
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+        const [year, month, day] = dateString.split('-');
+        return `${day}/${month}/${year}`;
+      }
+      
+      // Try to parse other formats
+      try {
+        const date = new Date(dateString);
+        if (!isNaN(date.getTime())) {
+          const day = date.getDate().toString().padStart(2, '0');
+          const month = (date.getMonth() + 1).toString().padStart(2, '0');
+          const year = date.getFullYear();
+          return `${day}/${month}/${year}`;
+        }
+      } catch (e) {
+        console.warn('Could not parse date:', dateString);
+      }
+      
+      return '';
+    };
+    
+    // Format all dates consistently
+    const formattedJoinDate = formatToddmmyyyy(memberData.joinDate) || formatToddmmyyyy(new Date().toISOString().split('T')[0]);
+    const formattedBirthday = formatToddmmyyyy(memberData.birthday);
+    const formattedAnniversary = formatToddmmyyyy(memberData.anniversary);
+    
+    // Calculate required dues based on join date
+    const MONTHLY_DUES = 10; // £10 per month
+    let requiredDues = 0;
+    
+    if (formattedJoinDate) {
+      const [day, month, year] = formattedJoinDate.split('/');
+      const joinDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+      const currentDate = new Date();
+      
+      // If join date is in current year
+      if (joinDate.getFullYear() === currentDate.getFullYear()) {
+        // Calculate months from join date to December
+        const monthsRemaining = 12 - joinDate.getMonth();
+        requiredDues = monthsRemaining * MONTHLY_DUES;
+      }
+    }
     
     // Generate new member ID (using email as ID)
     const newMember: Member = {
       id: memberData.email, // Using email as ID
       ...memberData,
+      joinDate: formattedJoinDate,
+      birthday: formattedBirthday,
+      anniversary: formattedAnniversary,
       duesAmountPaid: 0,
-      outstandingYTD: 120, // Initial outstanding amount
-      totalDuesOwed: 120,
-      memberStatus: memberData.memberStatus || 'inactive'
+      outstandingYTD: requiredDues,
+      totalDuesOwed: requiredDues,
+      memberStatus: memberData.memberStatus || 'active',
+      year: new Date().getFullYear().toString()
     };
 
     // Add member to the Members sheet in correct column order
@@ -983,7 +1316,7 @@ export const createMember = async (memberData: ExtendedMemberData): Promise<Memb
       auth,
       spreadsheetId: SPREADSHEET_ID,
       range: MEMBERS_RANGE,
-      valueInputOption: 'USER_ENTERED',
+      valueInputOption: 'RAW',
       requestBody: {
         values: [[
           newMember.name,            // A: Name
@@ -991,12 +1324,12 @@ export const createMember = async (memberData: ExtendedMemberData): Promise<Memb
           '',                        // C: Password (empty in Members sheet)
           formatBoolean(memberData.isAdmin || false), // D: IsAdmin
           newMember.phoneNumber,     // E: Phone Number
-          newMember.joinDate,        // F: Join Date
-          newMember.birthday,        // G: Birthday
-          newMember.anniversary,     // H: Anniversary
+          formattedJoinDate,         // F: Join Date (dd/mm/yyyy)
+          formattedBirthday,         // G: Birthday (dd/mm/yyyy)
+          formattedAnniversary,      // H: Anniversary (dd/mm/yyyy)
           newMember.memberStatus,    // I: Status
-          newMember.duesAmountPaid,  // J: Dues Amount
-          newMember.outstandingYTD,  // K: Outstanding
+          newMember.duesAmountPaid,  // J: Dues Amount (as number)
+          newMember.outstandingYTD,  // K: Outstanding (as number)
           newMember.year            // L: Year
         ]]
       }
@@ -1013,6 +1346,11 @@ export const updateMember = async (id: string, updates: Partial<Member>): Promis
   try {
     const auth = await getAuth();
     
+    // Validate phone number if it's being updated
+    if (updates.phoneNumber) {
+      updates.phoneNumber = validatePhoneNumber(updates.phoneNumber);
+    }
+
     // Get all members to find the row to update
     const response = await sheets.spreadsheets.values.get({
       auth,
@@ -1054,7 +1392,7 @@ export const updateMember = async (id: string, updates: Partial<Member>): Promis
       auth,
       spreadsheetId: SPREADSHEET_ID,
       range: `Members!A${rowIndex + 2}:L${rowIndex + 2}`,
-      valueInputOption: 'USER_ENTERED',
+      valueInputOption: 'RAW',
       requestBody: {
         values: [[
           updatedMember.name,            // A: Name
@@ -1066,9 +1404,9 @@ export const updateMember = async (id: string, updates: Partial<Member>): Promis
           updatedMember.birthday,        // G: Birthday
           updatedMember.anniversary,     // H: Anniversary
           updatedMember.memberStatus,    // I: Status
-          updatedMember.duesAmountPaid.toString(),  // J: Dues Amount
-          updatedMember.outstandingYTD.toString(),  // K: Outstanding
-          updatedMember.year             // L: Year
+          updatedMember.duesAmountPaid,  // J: Dues Amount (as number)
+          updatedMember.outstandingYTD,  // K: Outstanding (as number)
+          parseInt(updatedMember.year)   // L: Year (as number)
         ]]
       }
     });
@@ -1235,5 +1573,211 @@ export const deleteUser = async (email: string): Promise<void> => {
   } catch (error) {
     logError('Error deleting user', error);
     throw new Error('Failed to delete user');
+  }
+};
+
+// Function to fix existing data formatting issues
+export const fixSheetFormatting = async () => {
+  try {
+    const auth = await getAuth();
+    
+    // Get the sheet ID for Members sheet
+    const sheetResponse = await sheets.spreadsheets.get({
+      auth,
+      spreadsheetId: SPREADSHEET_ID,
+    });
+    
+    const membersSheetId = sheetResponse.data.sheets?.find(s => s.properties?.title === 'Members')?.properties?.sheetId;
+    
+    if (!membersSheetId) {
+      throw new Error('Members sheet not found');
+    }
+    
+    // Clear formatting and set proper format for numeric and date columns
+    const formatRequests = [
+      // Format for Dues Amount (Column J)
+      {
+        repeatCell: {
+          range: {
+            sheetId: membersSheetId,
+            startColumnIndex: 9, // Column J
+            endColumnIndex: 10,
+            startRowIndex: 1,    // Skip header row
+          },
+          cell: {
+            userEnteredFormat: {
+              numberFormat: {
+                type: 'NUMBER',
+                pattern: '0'
+              }
+            }
+          },
+          fields: 'userEnteredFormat.numberFormat'
+        }
+      },
+      // Format for Outstanding (Column K)
+      {
+        repeatCell: {
+          range: {
+            sheetId: membersSheetId,
+            startColumnIndex: 10, // Column K
+            endColumnIndex: 11,
+            startRowIndex: 1,    // Skip header row
+          },
+          cell: {
+            userEnteredFormat: {
+              numberFormat: {
+                type: 'NUMBER',
+                pattern: '0'
+              }
+            }
+          },
+          fields: 'userEnteredFormat.numberFormat'
+        }
+      },
+      // Format for Year (Column L)
+      {
+        repeatCell: {
+          range: {
+            sheetId: membersSheetId,
+            startColumnIndex: 11, // Column L
+            endColumnIndex: 12,
+            startRowIndex: 1,    // Skip header row
+          },
+          cell: {
+            userEnteredFormat: {
+              numberFormat: {
+                type: 'NUMBER',
+                pattern: '0000'
+              }
+            }
+          },
+          fields: 'userEnteredFormat.numberFormat'
+        }
+      },
+      // Format for Date columns (Join Date, Birthday, Anniversary)
+      {
+        repeatCell: {
+          range: {
+            sheetId: membersSheetId,
+            startColumnIndex: 5, // Column F (Join Date)
+            endColumnIndex: 8,  // Through Column H (Anniversary)
+            startRowIndex: 1,   // Skip header row
+          },
+          cell: {
+            userEnteredFormat: {
+              numberFormat: {
+                type: 'DATE',
+                pattern: 'dd/mm/yyyy'
+              }
+            }
+          },
+          fields: 'userEnteredFormat.numberFormat'
+        }
+      }
+    ];
+    
+    // Apply the formatting
+    await sheets.spreadsheets.batchUpdate({
+      auth,
+      spreadsheetId: SPREADSHEET_ID,
+      requestBody: {
+        requests: formatRequests
+      }
+    });
+    
+    // Now fix the actual data values - get all current data
+    const response = await sheets.spreadsheets.values.get({
+      auth,
+      spreadsheetId: SPREADSHEET_ID,
+      range: MEMBERS_RANGE,
+    });
+    
+    const rows = response.data.values || [];
+    
+    // Process each row to fix the data
+    const fixedRows = rows.map((row, index) => {
+      // Skip empty rows or header row
+      if (index === 0 || !row[MEMBER_COLUMNS.NAME] || !row[MEMBER_COLUMNS.EMAIL]) {
+        return row;
+      }
+      
+      const fixedRow = [...row];
+      
+      // Fix IsAdmin (Column D) - normalize to uppercase TRUE/FALSE
+      fixedRow[MEMBER_COLUMNS.IS_ADMIN] = (row[MEMBER_COLUMNS.IS_ADMIN]?.toString().toLowerCase() === 'true').toString().toUpperCase();
+      
+      // Fix Join Date, Birthday, and Anniversary (Columns F, G, H)
+      [MEMBER_COLUMNS.JOIN_DATE, MEMBER_COLUMNS.BIRTHDAY, MEMBER_COLUMNS.ANNIVERSARY].forEach(dateColumn => {
+        const dateValue = row[dateColumn];
+        if (dateValue) {
+          // Handle YYYY-MM-DD format
+          if (dateValue.includes('-')) {
+            const [year, month, day] = dateValue.split('-');
+            fixedRow[dateColumn] = `${day}/${month}/${year}`;
+          }
+          // Handle invalid or incomplete dates
+          else if (!dateValue.includes('/') || dateValue.split('/').length !== 3) {
+            fixedRow[dateColumn] = '';
+          }
+        } else {
+          fixedRow[dateColumn] = '';
+        }
+      });
+      
+      // Fix Dues Amount (Column J) - ensure it's a number
+      const duesAmount = row[MEMBER_COLUMNS.DUES_PAID];
+      if (duesAmount) {
+        // Extract number from various formats and remove currency symbols
+        const numMatch = duesAmount.toString().replace(/[^0-9.-]+/g, '');
+        fixedRow[MEMBER_COLUMNS.DUES_PAID] = numMatch ? parseInt(numMatch) : 0;
+      } else {
+        fixedRow[MEMBER_COLUMNS.DUES_PAID] = 0;
+      }
+      
+      // Fix Outstanding (Column K) - ensure it's a number
+      const outstanding = row[MEMBER_COLUMNS.OUTSTANDING];
+      if (outstanding) {
+        // Extract number from various formats and remove currency symbols
+        const numMatch = outstanding.toString().replace(/[^0-9.-]+/g, '');
+        fixedRow[MEMBER_COLUMNS.OUTSTANDING] = numMatch ? parseInt(numMatch) : 0;
+      } else {
+        fixedRow[MEMBER_COLUMNS.OUTSTANDING] = 0;
+      }
+      
+      // Fix Year (Column L) - ensure it's a 4-digit year number
+      const year = row[MEMBER_COLUMNS.YEAR];
+      if (year) {
+        // Extract year from various formats
+        const yearMatch = year.toString().match(/(\d{4})/);
+        fixedRow[MEMBER_COLUMNS.YEAR] = yearMatch ? parseInt(yearMatch[1]) : new Date().getFullYear();
+      } else {
+        fixedRow[MEMBER_COLUMNS.YEAR] = new Date().getFullYear();
+      }
+      
+      // Fix Status (Column I) - normalize to lowercase
+      fixedRow[MEMBER_COLUMNS.STATUS] = (row[MEMBER_COLUMNS.STATUS] || 'active').toLowerCase();
+      
+      return fixedRow;
+    });
+    
+    // Update all rows in the sheet
+    await sheets.spreadsheets.values.update({
+      auth,
+      spreadsheetId: SPREADSHEET_ID,
+      range: MEMBERS_RANGE,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: fixedRows
+      }
+    });
+    
+    return {
+      message: 'Sheet formatting and data fixed successfully',
+      rowsProcessed: fixedRows.length - 1 // Subtract header row
+    };
+  } catch (error) {
+    logError('Error fixing sheet formatting', error);
+    throw new Error('Failed to fix sheet formatting');
   }
 }; 
